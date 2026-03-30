@@ -1,0 +1,17 @@
+crc32c==2.7.1
+donfig==0.8.1.post1
+h5py==3.14.0
+imageio==2.37.0
+imaris-ims-file-reader==0.1.8
+lazy_loader==0.4
+networkx==3.5
+numcodecs==0.16.1
+numpy==2.3.2
+packaging==25.0
+pillow==11.3.0
+PyYAML==6.0.2
+scikit-image==0.25.2
+scipy==1.16.0
+tifffile==2025.6.11
+typing_extensions==4.14.1
+zarr==3.1.0

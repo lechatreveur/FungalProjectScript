@@ -1,0 +1,36 @@
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.env
+cellpose_3011_env/
+ims_env/
+.venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data and Neural Network Models
+*.npz
+*.pt
+*.pth
+*.tif
+*.tiff
+*.csv
+*.nd2
+*.mp4
+training_dataset/
+training_progress.log
+checkpoints/
+checkpoints_binary/
+SingleCellQuantificationHPC/logs/
