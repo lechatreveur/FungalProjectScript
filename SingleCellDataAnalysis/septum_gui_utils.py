@@ -250,26 +250,35 @@ class MaskTableCache:
       - tps: list of available tps
       - min/max tp
     """
-    def __init__(self, cell_csv_map: Dict[int, str], time_col: str, mask_col: str):
+    def __init__(self, cell_csv_map: Dict[Tuple[str, int], str], time_col: str, mask_col: str):
         self.cell_csv_map = cell_csv_map
         self.time_col = time_col
         self.mask_col = mask_col
-        self._df: Dict[int, pd.DataFrame] = {}
-        self._tps: Dict[int, List[int]] = {}
-        self._minmax: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
+        self._df: Dict[Tuple[str, int], pd.DataFrame] = {}
+        self._tps: Dict[Tuple[str, int], List[int]] = {}
+        self._minmax: Dict[Tuple[str, int], Tuple[Optional[int], Optional[int]]] = {}
 
-    def load(self, cid: int) -> pd.DataFrame:
-        if cid in self._df:
-            return self._df[cid]
+    def load(self, key: Tuple[str, int]) -> pd.DataFrame:
+        if key in self._df:
+            return self._df[key]
 
-        path = self.cell_csv_map[cid]
+        path = self.cell_csv_map[key]
         df = pd.read_csv(path)
         if self.time_col not in df.columns:
             raise KeyError(f"{path} missing column '{self.time_col}'")
-        if self.mask_col not in df.columns:
-            raise KeyError(f"{path} missing column '{self.mask_col}'")
+            
+        actual_mask_col = self.mask_col
+        if actual_mask_col not in df.columns:
+            if "rle_gfp" in df.columns:
+                actual_mask_col = "rle_gfp"
+            elif "rle_bf" in df.columns:
+                actual_mask_col = "rle_bf"
+            else:
+                raise KeyError(f"{path} missing column '{self.mask_col}' and no fallback found")
 
-        df = df[[self.time_col, self.mask_col]].copy()
+        df = df[[self.time_col, actual_mask_col]].copy()
+        if actual_mask_col != self.mask_col:
+            df = df.rename(columns={actual_mask_col: self.mask_col})
         df[self.time_col] = pd.to_numeric(df[self.time_col], errors="coerce").astype("Int64")
         df = df.dropna(subset=[self.time_col]).copy()
         df[self.time_col] = df[self.time_col].astype(int)
@@ -286,19 +295,19 @@ class MaskTableCache:
         df_ok = df[df["_has"]].drop(columns=["_has"]).copy()
         df_ok = df_ok.sort_values(self.time_col).reset_index(drop=True)
 
-        self._df[cid] = df_ok
+        self._df[key] = df_ok
         tps = df_ok[self.time_col].tolist()
-        self._tps[cid] = tps
-        self._minmax[cid] = (min(tps), max(tps)) if tps else (None, None)
+        self._tps[key] = tps
+        self._minmax[key] = (min(tps), max(tps)) if tps else (None, None)
         return df_ok
 
-    def tps_set(self, cid: int) -> set:
-        self.load(cid)
-        return set(self._tps.get(cid, []))
+    def tps_set(self, key: Tuple[str, int]) -> set:
+        self.load(key)
+        return set(self._tps.get(key, []))
 
-    def minmax(self, cid: int) -> Tuple[Optional[int], Optional[int]]:
-        self.load(cid)
-        return self._minmax.get(cid, (None, None))
+    def minmax(self, key: Tuple[str, int]) -> Tuple[Optional[int], Optional[int]]:
+        self.load(key)
+        return self._minmax.get(key, (None, None))
 
 
 # -------------------------
@@ -308,7 +317,9 @@ def frame_path(frames_dir: str, film_name: str, tp: int, channel_index: int) -> 
     return os.path.join(frames_dir, f"{film_name}_t_{tp:03d}_c_{channel_index}.tif")
 
 
-def cache_png_path(cache_img_dir: str, cid: int, tp: int) -> str:
+def cache_png_path(cache_img_dir: str, key: Tuple[str, int], tp: int) -> str:
+    # key is (film_name, cid)
+    _, cid = key
     return os.path.join(cache_img_dir, f"cell_{cid}_t_{tp:03d}.png")
 
 
@@ -329,14 +340,14 @@ def ensure_tile_for_cell_tp(
     cache_force: bool,
 ) -> Optional[np.ndarray]:
 
-    png_path = cache_png_path(cache_img_dir, cid, tp)
+    png_path = cache_png_path(cache_img_dir, (film_name, cid), tp)
     if (not cache_force) and os.path.isfile(png_path):
         try:
             return to_tile(read_png_gray(png_path), (tile_size, tile_size))
         except Exception:
             pass
 
-    dfm = masks.load(cid)
+    dfm = masks.load((film_name, cid))
     row = dfm[dfm[time_col] == tp]
     if row.empty:
         return None
@@ -500,6 +511,7 @@ def load_state(json_path: str, film_name: str, all_cell_ids: List[int]):
                             "has_septum": bool(v.get("has_septum", False)),
                             "start_aligned": v.get("start_aligned", None),
                             "end_aligned": v.get("end_aligned", None),
+                            "white_septum": bool(v.get("white_septum", False)),  # polarity flag
                         }
 
         except Exception as e:
@@ -598,6 +610,7 @@ def save_state_and_labels(
                 "has_septum": bool(v.get("has_septum", False)),
                 "start_aligned": (None if v.get("start_aligned", None) is None else float(v["start_aligned"])),
                 "end_aligned": (None if v.get("end_aligned", None) is None else float(v["end_aligned"])),
+                "white_septum": bool(v.get("white_septum", False)),  # polarity flag
             }
             for cid, v in cell_intervals.items()
         }),
@@ -625,8 +638,9 @@ def save_state_and_labels(
     else:
         print("[note] Global interval not set yet; CSV not written.")
         
-def cache_strip_path(cache_img_dir: str, cid: int, tile_size: int, channel_index: int) -> str:
+def cache_strip_path(cache_img_dir: str, key: Tuple[str, int], tile_size: int, channel_index: int) -> str:
     # include tile_size/channel to avoid collisions across GUI settings
+    _, cid = key
     return os.path.join(cache_img_dir, f"cell_{cid}_strip_ts{int(tile_size)}_c{int(channel_index)}.npy")
 
 
@@ -650,9 +664,10 @@ def ensure_strip_for_cell(
       strip shape = (tile_size, tile_size * L)
       tp0 = first tp (so index = tp - tp0)
     """
-    strip_fp = cache_strip_path(cache_img_dir, cid, tile_size=tile_size, channel_index=channel_index)
+    key = (film_name, cid)
+    strip_fp = cache_strip_path(cache_img_dir, key, tile_size=tile_size, channel_index=channel_index)
 
-    tp0, tp1 = masks.minmax(cid)
+    tp0, tp1 = masks.minmax(key)
     if tp0 is None or tp1 is None:
         return np.zeros((tile_size, tile_size), np.uint8), 0
 
@@ -680,7 +695,7 @@ def ensure_strip_for_cell(
     L = int(tp1 - tp0 + 1)
     strip = np.zeros((tile_size, tile_size * L), dtype=np.uint8)
 
-    tps = masks.tps_set(cid)  # only those that exist
+    tps = masks.tps_set(key)  # only those that exist
     for tp in range(int(tp0), int(tp1) + 1):
         if tp not in tps:
             continue
@@ -714,16 +729,14 @@ def ensure_strip_for_cell(
 
 def compose_sheet_from_strips(
     *,
-    visible_cids: List[int],
-    a_left: int,
+    visible_keys: List[Tuple[str, int]],
+    a_left_map: Dict[str, int],  # film_name -> a_left
     n_cols: int,
     tile_size: int,
     tile_gap: int,
-    film_name: str,
-    frames_dir: str,
-    cache_img_dir: str,
+    film_paths_map: Dict[str, FilmPaths], # film_name -> paths
     masks: MaskTableCache,
-    offsets: Dict[int, int],
+    offsets: Dict[Tuple[str, int], int],
     time_col: str,
     mask_col: str,
     pad: int,
@@ -731,7 +744,7 @@ def compose_sheet_from_strips(
     cache_force: bool,
 ) -> Tuple[np.ndarray, dict]:
 
-    R = len(visible_cids)
+    R = len(visible_keys)
     C = int(n_cols)
     Ht = int(tile_size)
     Wt = int(tile_size)
@@ -740,15 +753,22 @@ def compose_sheet_from_strips(
     sheet_w = C * Wt + max(0, C - 1) * tile_gap
     sheet = np.zeros((sheet_h, sheet_w), dtype=np.uint8)
 
-    aligned_cols = [int(a_left) + j for j in range(C)]
+    # aligned_cols depends on the row's film global interval
+    # but for simplicity of the 'board', we keep a_left per film
+    # and we render each row accordingly.
 
-    for i, cid in enumerate(visible_cids):
-        off = int(offsets.get(cid, 0))
+    for i, key in enumerate(visible_keys):
+        fname, cid = key
+        paths = film_paths_map[fname]
+        a_left = a_left_map.get(fname, 0)
+        aligned_cols = [int(a_left) + j for j in range(C)]
+
+        off = int(offsets.get(key, 0))
         strip, tp0 = ensure_strip_for_cell(
             cid=cid,
-            film_name=film_name,
-            frames_dir=frames_dir,
-            cache_img_dir=cache_img_dir,
+            film_name=fname,
+            frames_dir=paths.frames_dir,
+            cache_img_dir=paths.cache_img_dir,
             masks=masks,
             offsets=offsets,
             time_col=time_col,
@@ -774,9 +794,122 @@ def compose_sheet_from_strips(
             x0 = j * (Wt + tile_gap)
             sheet[y0:y0 + Ht, x0:x0 + Wt] = tile
 
-    meta = {"row_cell_ids": list(visible_cids), "a_left": int(a_left), "aligned_cols": aligned_cols}
+    meta = {"row_keys": list(visible_keys), "a_left_map": a_left_map}
     return sheet, meta
+
+
+def load_multi_state(film_paths_map: Dict[str, FilmPaths], film_cells_map: Dict[str, List[int]]):
+    """
+    Returns (offsets, a_left_map, cell_intervals, global_interval) for all films.
+    """
+    total_offsets = {}
+    a_left_map = {}
+    total_cell_intervals = {} # (fname, cid) -> dict
+    global_intervals_map = {} # fname -> (G0, G1)
+
+    for fname, paths in film_paths_map.items():
+        all_cids = film_cells_map[fname]
         
+        offsets = { (fname, cid): 0 for cid in all_cids }
+        a_left = 0
+        intervals = {}
+
+        if os.path.isfile(paths.json_path):
+            try:
+                with open(paths.json_path, "r") as f:
+                    js = json.load(f)
+                
+                # offsets
+                offs_js = js.get("offsets", {})
+                for cid_str, val in offs_js.items():
+                    try:
+                        cid = int(cid_str)
+                        if (fname, cid) in offsets:
+                            offsets[(fname, cid)] = int(val)
+                    except: pass
+                
+                # a_left and global_interval map
+                gi = js.get("global_interval")
+                if gi:
+                    a_left = int(gi.get("G0", 0))
+                    if "G0" in gi and "G1" in gi:
+                        global_intervals_map[fname] = (int(gi["G0"]), int(gi["G1"]))
+                
+                # cell_intervals
+                ci_js = js.get("cell_intervals", {})
+                for cid_str, val in ci_js.items():
+                    try:
+                        cid = int(cid_str)
+                        intervals[(fname, cid)] = val
+                    except: pass
+
+            except Exception as e:
+                print(f"[warn] Could not load JSON for {fname}: {e}")
+
+        total_offsets.update(offsets)
+        a_left_map[fname] = a_left
+        total_cell_intervals.update(intervals)
+
+    return total_offsets, a_left_map, total_cell_intervals, global_intervals_map
+
+
+def save_multi_state(
+    film_paths_map: Dict[str, FilmPaths],
+    film_cells_map: Dict[str, List[int]],
+    offsets: Dict[Tuple[str, int], int],
+    a_left_map: Dict[str, int],
+    cell_intervals: Dict[Tuple[str, int], dict],
+    ordered_keys: List[Tuple[str, int]],
+    global_intervals_map: Dict[str, Tuple[int, int]],
+):
+    """
+    Splits the unified state and saves to each film's individually.
+    """
+    for fname, paths in film_paths_map.items():
+        all_cids = film_cells_map[fname]
+        # Filter unified state for this film
+        # Note: cell_intervals strings keys were used in the original JSON structure.
+        f_offsets = { str(cid): val for (f, cid), val in offsets.items() if f == fname }
+        f_intervals = { str(cid): val for (f, cid), val in cell_intervals.items() if f == fname }
+        f_order = [ cid for (f, cid) in ordered_keys if f == fname ]
+        f_a_left = a_left_map.get(fname, 0)
+        
+        f_global_interval = global_intervals_map.get(fname, None)
+        gi_dict = {"G0": f_global_interval[0], "G1": f_global_interval[1]} if f_global_interval else {"G0": f_a_left, "G1": f_a_left + 55}
+
+        # Build JSON state
+        js = {
+            "working_dir": os.path.dirname(paths.film_dir),
+            "film_name": fname,
+            "cell_order": f_order,
+            "offsets": f_offsets,
+            "global_interval": gi_dict,
+            "cell_intervals": f_intervals,
+            "updated_at": datetime.now().isoformat(),
+        }
+
+        try:
+            os.makedirs(paths.label_dir, exist_ok=True)
+            with open(paths.json_path, "w") as f:
+                json.dump(js, f, indent=2)
+
+            # Export CSV if possible
+            if f_a_left is not None:
+                rows = []
+                for cid in all_cids:
+                    ci = f_intervals.get(str(cid), {})
+                    rows.append({
+                        "cell_id": cid,
+                        "a_left": f_a_left,
+                        "start_aligned": ci.get("start_aligned"),
+                        "end_aligned": ci.get("end_aligned"),
+                        "has": 1 if ci.get("has_septum") else 0,
+                        "white_septum": 1 if ci.get("white_septum") else 0,
+                    })
+                df = pd.DataFrame(rows)
+                df.to_csv(paths.csv_path, index=False)
+        except Exception as e:
+            print(f"[warn] Could not save state for {fname} (drive disconnected?): {e}")        
 
 
 

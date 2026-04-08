@@ -251,6 +251,7 @@ def export_cell_training_sample(
     label_source: str = "none",               # "cell" | "global" | "none"
     start_aligned: Optional[float] = None,    # audit only
     end_aligned: Optional[float] = None,      # audit only
+    white_septum: bool = False,               # polarity inversion flag
 ) -> str:
     """
     Writes:
@@ -339,6 +340,7 @@ def export_cell_training_sample(
         "end_aligned": ("" if end_aligned is None else float(end_aligned)),
         "L": int(L),
         "tile_size": int(tile_size),
+        "white_septum": bool(white_septum),   # polarity flag
     }])
     upsert_manifest_rows(working_dir, row)
 
@@ -350,9 +352,9 @@ def export_film_training_dataset(
     working_dir: str,
     film_name: str,
     all_cell_ids: List[int],
-    offsets: Dict[int, int],
-    global_interval: Optional[Tuple[int, int]],
-    cell_intervals: Optional[Dict[int, dict]],
+    offsets: Dict[int | Tuple[str, int], int],
+    global_interval: Optional[Tuple[int, int]] = None,
+    cell_intervals: Optional[Dict[int | Tuple[str, int], dict]] = None,
     # strip builder deps (same as GUI uses)
     frames_dir: str,
     cache_img_dir: str,
@@ -371,10 +373,9 @@ def export_film_training_dataset(
       - else global_interval bootstrap if present
       - else skip
     Converts aligned endpoints -> strip indices and calls export_cell_training_sample().
-
-    Returns counts: written/pos/neg/skipped.
+    Handles both legacy cid keys and multi-film (fname, cid) keys.
     """
-    from .septum_gui_utils import ensure_strip_for_cell  # keep GUI small; reuse canonical strip builder
+    from septum_gui_utils import ensure_strip_for_cell
 
     if global_interval is None and not cell_intervals:
         print("[export] No global interval and no per-cell intervals; nothing to export.")
@@ -393,31 +394,46 @@ def export_film_training_dataset(
 
     for k, cid in enumerate(all_cell_ids):
         cid = int(cid)
-        off = int(offsets.get(cid, 0))
+        
+        # New-style multi-film state?
+        key = (film_name, cid)
+        if key in offsets:
+            off = int(offsets[key])
+        else:
+            off = int(offsets.get(cid, 0))
 
         label_source = "none"
         start_a = None
         end_a = None
+        current_cell_state = {}
 
         # (1) per-cell label
-        if cid in cell_intervals:
-            v = cell_intervals[cid]
+        if key in cell_intervals:
+            current_cell_state = cell_intervals[key]
             label_source = "cell"
-            if bool(v.get("has_septum", False)) is False:
+        elif cid in cell_intervals:
+            current_cell_state = cell_intervals[cid]
+            label_source = "cell"
+
+        if label_source == "cell":
+            if bool(current_cell_state.get("has_septum", False)) is False:
                 start_a = None
                 end_a = None
             else:
-                s = v.get("start_aligned", None)
-                e = v.get("end_aligned", None)
+                s = current_cell_state.get("start_aligned", None)
+                e = current_cell_state.get("end_aligned", None)
                 start_a = None if s is None else int(round(float(s)))
                 end_a   = None if e is None else int(round(float(e)))
+                
+                if start_a is None and end_a is None and global_interval is not None:
+                    label_source = "none" # Fallback to global bootstrap
 
         # (2) global bootstrap
-        elif global_interval is not None:
+        if label_source == "none" and global_interval is not None:
             label_source = "global"
             G0, G1 = map(int, global_interval)
 
-            tp_min, tp_max = masks.minmax(cid)
+            tp_min, tp_max = masks.minmax(key)
             if tp_min is None or tp_max is None:
                 n_skipped += 1
                 continue
@@ -432,7 +448,7 @@ def export_film_training_dataset(
                 start_a = int(G0) if (a_min <= G0) else None
                 end_a   = int(G1) if (a_max >= G1) else None
 
-        else:
+        elif label_source == "none":
             n_skipped += 1
             continue
 
@@ -452,12 +468,10 @@ def export_film_training_dataset(
             cache_force=cache_force,
         )
 
-        # skip degenerate/no-data cells
-        tp_min, tp_max = masks.minmax(cid)
-        if tp_min is None or tp_max is None:
+        if strip is None:
             n_skipped += 1
             continue
-
+            
         strip = np.asarray(strip)
         if strip.ndim != 2:
             n_skipped += 1
@@ -480,6 +494,9 @@ def export_film_training_dataset(
         else:
             n_neg += 1
 
+        # Extract white_septum flag
+        is_white = bool(current_cell_state.get("white_septum", False))
+
         export_cell_training_sample(
             working_dir=working_dir,
             film_name=film_name,
@@ -492,6 +509,7 @@ def export_film_training_dataset(
             label_source=label_source,
             start_aligned=(None if start_a is None else float(start_a)),
             end_aligned=(None if end_a is None else float(end_a)),
+            white_septum=is_white,
         )
         n_written += 1
 

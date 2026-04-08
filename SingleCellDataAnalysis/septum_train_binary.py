@@ -23,12 +23,25 @@ Model outputs:
 
 import os
 import math
+import logging
 import numpy as np
 import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
+
+_LOG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "training.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(_LOG_FILE, mode="a", encoding="utf-8"),
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 
 # =========================
@@ -54,14 +67,18 @@ def seed_everything(seed: int = 0):
 # =========================
 # data: manifest split
 # =========================
-def load_manifest(working_dir: str) -> pd.DataFrame:
-    fp = os.path.join(working_dir, "training_dataset", "manifest.csv")
-    if not os.path.isfile(fp):
-        raise FileNotFoundError(f"manifest.csv not found: {fp}")
-    df = pd.read_csv(fp)
-    if df.empty:
-        raise ValueError(f"manifest.csv is empty: {fp}")
-    return df
+def load_manifests(working_dirs: list[str]) -> pd.DataFrame:
+    dfs = []
+    for d in working_dirs:
+        fp = os.path.join(d, "training_dataset", "manifest.csv")
+        if not os.path.isfile(fp):
+            raise FileNotFoundError(f"manifest.csv not found: {fp}")
+        df = pd.read_csv(fp)
+        if df.empty:
+            raise ValueError(f"manifest.csv is empty: {fp}")
+        df["_source_dir"] = d
+        dfs.append(df)
+    return pd.concat(dfs, ignore_index=True)
 
 
 def split_train_val(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -77,6 +94,9 @@ def split_train_val(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 # =========================
 # data: dataset with random crops
 # =========================
+# Median septum duration observed from the manifest — used to clamp partial labels
+_DEFAULT_SEP_DURATION = 62
+
 class SeptumWindowDataset(Dataset):
     """
     Loads full strip from NPZ, then samples a random crop with random window length.
@@ -89,7 +109,6 @@ class SeptumWindowDataset(Dataset):
 
     def __init__(
         self,
-        working_dir: str,
         df: pd.DataFrame,
         *,
         L_min: int = 16,
@@ -97,7 +116,6 @@ class SeptumWindowDataset(Dataset):
         include_pos_prob: float = 0.7,
         seed: int = 0,
     ):
-        self.working_dir = working_dir
         self.df = df.reset_index(drop=True)
         self.L_min = int(L_min)
         self.L_max = int(L_max)
@@ -128,7 +146,7 @@ class SeptumWindowDataset(Dataset):
 
     def __getitem__(self, i: int):
         row = self.df.iloc[i]
-        npz_fp = os.path.join(self.working_dir, str(row["npz_path"]))
+        npz_fp = os.path.join(str(row["_source_dir"]), str(row["npz_path"]))
         if not os.path.isfile(npz_fp):
             raise FileNotFoundError(f"NPZ not found: {npz_fp}")
 
@@ -156,15 +174,58 @@ class SeptumWindowDataset(Dataset):
         else:
             j = int(self.rng.integers(0, Lfull - Lw + 1))
 
-        x = x_full[j : j + Lw]  # (Lw,1,H,W)
+        x = x_full[j : j + Lw].copy()  # (Lw,1,H,W)
 
-        y_start = 1.0 if (s_idx >= 0 and (j <= s_idx < j + Lw)) else 0.0
-        y_end = 1.0 if (e_idx >= 0 and (j <= e_idx < j + Lw)) else 0.0
+        # --- Augmentations ---
+        # Horizontal (left-right) flip
+        if self.rng.random() < 0.5:
+            x = x[:, :, :, ::-1].copy()
+            
+        # Vertical (top-bottom) flip
+        if self.rng.random() < 0.5:
+            x = x[:, :, ::-1, :].copy()
+            
+        # Contrast jitter ±20%
+        if self.rng.random() < 0.5:
+            contrast = float(self.rng.uniform(0.8, 1.2))
+            mean_px = np.mean(x)
+            x = np.clip((x - mean_px) * contrast + mean_px, 0.0, 1.0).astype(np.float32)
+
+        # Brightness jitter ±20%
+        jitter = float(self.rng.uniform(-0.2, 0.2))
+        x = np.clip(x + jitter, 0.0, 1.0).astype(np.float32)
+
+        # Per-cell polarity inversion for white-septum cells (GUI-labeled).
+        # Deterministic (not random) — only inverts cells the user explicitly flagged
+        # via the 'i' key in the alignment board GUI. This avoids the model-collapse
+        # caused by random 50% inversion on small datasets.
+        if bool(row.get("white_septum", False)):
+            x = (1.0 - x).astype(np.float32)
+
+
+        # Fix 1: Create dense state mask with partial-label clamping
+        # Cells with only one boundary get clamped to _DEFAULT_SEP_DURATION
+        # to prevent garbage signal from unlabeled regions
+        y_state_full = np.zeros(Lfull, dtype=np.float32)
+        if s_idx >= 0 or e_idx >= 0:
+            if s_idx >= 0 and e_idx >= 0:
+                # Both bounds known — use them directly
+                e_clamp = e_idx
+            elif s_idx >= 0:
+                # Start only — clamp end
+                e_clamp = min(s_idx + _DEFAULT_SEP_DURATION, Lfull - 1)
+            else:
+                # End only — clamp start
+                s_idx = max(0, e_idx - _DEFAULT_SEP_DURATION)
+                e_clamp = e_idx
+            for ii in range(s_idx, min(e_clamp + 1, Lfull)):
+                y_state_full[ii] = 1.0
+
+        y_state = y_state_full[j : j + Lw]
 
         return {
             "x": torch.from_numpy(x),  # (Lw,1,H,W)
-            "y_start": torch.tensor(y_start, dtype=torch.float32),
-            "y_end": torch.tensor(y_end, dtype=torch.float32),
+            "y_state": torch.from_numpy(y_state),  # (Lw,)
         }
 
 
@@ -183,8 +244,7 @@ def collate_pad(batch):
     x = torch.zeros((B, Lmax, 1, Hmax, Wmax), dtype=torch.float32)
     mask = torch.zeros((B, Lmax), dtype=torch.float32)
 
-    y_start = torch.stack([b["y_start"] for b in batch]).float()  # (B,)
-    y_end = torch.stack([b["y_end"] for b in batch]).float()  # (B,)
+    y_state = torch.zeros((B, Lmax), dtype=torch.float32)  # (B, Lmax)
 
     for i, b in enumerate(batch):
         L = b["x"].shape[0]
@@ -194,8 +254,9 @@ def collate_pad(batch):
             x_i = F.interpolate(x_i, size=(Hmax, Wmax), mode="bilinear", align_corners=False)
         x[i, :L] = x_i
         mask[i, :L] = 1.0
+        y_state[i, :L] = b["y_state"]
 
-    return {"x": x, "mask": mask, "y_start": y_start, "y_end": y_end}
+    return {"x": x, "mask": mask, "y_state": y_state}
 
 
 # =========================
@@ -206,14 +267,17 @@ class TileEncoder(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Conv2d(1, 16, 3, padding=1),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),          # 48x48
             nn.Conv2d(16, 32, 3, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),          # 24x24
             nn.Conv2d(32, D, 3, padding=1),
+            nn.BatchNorm2d(D),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),
+            nn.AdaptiveMaxPool2d((1, 1))
         )
 
     def forward(self, x):
@@ -223,8 +287,7 @@ class TileEncoder(nn.Module):
 class EndpointMIL(nn.Module):
     """
     Outputs:
-      start_t, end_t: (B,L) masked logits
-      start_win, end_win: (B,) pooled window logits (masked max)
+      state_t: (B,L) masked logits
     """
 
     def __init__(self, D: int = 64):
@@ -232,12 +295,13 @@ class EndpointMIL(nn.Module):
         self.enc = TileEncoder(D=D)
         self.temporal = nn.Sequential(
             nn.Conv1d(D, D, 3, padding=1),
+            nn.BatchNorm1d(D),
             nn.ReLU(),
             nn.Conv1d(D, D, 3, padding=1),
+            nn.BatchNorm1d(D),
             nn.ReLU(),
         )
-        self.head_start = nn.Conv1d(D, 1, 1)
-        self.head_end = nn.Conv1d(D, 1, 1)
+        self.head_state = nn.Conv1d(D, 1, 1)
 
     def forward(self, x, mask):
         # x: (B,L,1,H,W), mask: (B,L)
@@ -245,66 +309,59 @@ class EndpointMIL(nn.Module):
         emb = self.enc(x.reshape(B * L, 1, H, W)).reshape(B, L, -1)  # (B,L,D)
         feat = self.temporal(emb.transpose(1, 2))  # (B,D,L)
 
-        start_t = self.head_start(feat)[:, 0, :]  # (B,L)
-        end_t = self.head_end(feat)[:, 0, :]  # (B,L)
+        state_t = self.head_state(feat)[:, 0, :]  # (B,L)
 
-        neg_inf = torch.finfo(start_t.dtype).min
-        start_t = start_t.masked_fill(mask == 0, neg_inf)
-        end_t = end_t.masked_fill(mask == 0, neg_inf)
+        neg_inf = torch.finfo(state_t.dtype).min
+        state_t = state_t.masked_fill(mask == 0, neg_inf)
 
-        start_win = start_t.max(dim=1).values  # (B,)
-        end_win = end_t.max(dim=1).values  # (B,)
-
-        return start_t, end_t, start_win, end_win
+        return state_t
 
 
 # =========================
 # loss / metrics
 # =========================
-def compute_pos_weight_from_manifest(train_df: pd.DataFrame) -> tuple[float, float]:
+def compute_pos_weight_from_manifest(train_df: pd.DataFrame) -> tuple[float]:
     """pos_weight = neg/pos for BCEWithLogitsLoss."""
     s = pd.to_numeric(train_df["start_idx"], errors="coerce").fillna(-1).astype(int).values
     e = pd.to_numeric(train_df["end_idx"], errors="coerce").fillna(-1).astype(int).values
 
     s_pos = int((s >= 0).sum())
-    e_pos = int((e >= 0).sum())
     n = len(train_df)
-
     s_neg = n - s_pos
-    e_neg = n - e_pos
 
     s_w = float(s_neg / max(1, s_pos))
-    e_w = float(e_neg / max(1, e_pos))
-    return s_w, e_w
+    return (s_w,)
 
 
 @torch.no_grad()
-def eval_epoch(model, dl, device, bce_s, bce_e, thresh=0.5):
+def eval_epoch(model, dl, device, bce_state, thresh=0.5):
     model.eval()
     loss_sum = 0.0
     n = 0
-    acc_s = 0
-    acc_e = 0
+    acc_state = 0
 
     for batch in tqdm(dl, desc="Validating", ncols=100, leave=False):
         x = batch["x"].to(device)
         mask = batch["mask"].to(device)
-        y_s = batch["y_start"].to(device)
-        y_e = batch["y_end"].to(device)
+        y_state = batch["y_state"].to(device)
 
-        _, _, s_win, e_win = model(x, mask)
-        loss = bce_s(s_win, y_s) + bce_e(e_win, y_e)
+        state_t = model(x, mask)
+        
+        # Flatten state_t and y_state using mask
+        valid_idx = (mask == 1.0)
+        state_t_flat = state_t[valid_idx]
+        y_state_flat = y_state[valid_idx]
+        
+        loss = bce_state(state_t_flat, y_state_flat)
 
-        ps = (torch.sigmoid(s_win) > thresh).float()
-        pe = (torch.sigmoid(e_win) > thresh).float()
+        ps = (torch.sigmoid(state_t_flat) > thresh).float()
 
         b = x.size(0)
         loss_sum += float(loss.item()) * b
         n += b
-        acc_s += int((ps == y_s).sum().item())
-        acc_e += int((pe == y_e).sum().item())
+        acc_state += int((ps == y_state_flat).sum().item()) / max(1, len(y_state_flat))
 
-    return loss_sum / max(1, n), acc_s / max(1, n), acc_e / max(1, n)
+    return loss_sum / max(1, n), acc_state / max(1, n)
 
 
 # =========================
@@ -343,7 +400,7 @@ def make_balanced_sampler(train_df: pd.DataFrame, which: str = "any"):
 
 
 def train(
-    working_dir: str,
+    working_dirs: list[str],
     *,
     D: int = 64,
     batch_size: int = 16,
@@ -363,12 +420,13 @@ def train(
     device = pick_device(device)
     seed_everything(seed)
 
-    df = load_manifest(working_dir)
+    if isinstance(working_dirs, str):
+        working_dirs = [working_dirs]
+    df = load_manifests(working_dirs)
     tr_df, va_df = split_train_val(df)
 
     # datasets
     ds_tr = SeptumWindowDataset(
-        working_dir,
         tr_df,
         L_min=L_min,
         L_max=L_max,
@@ -376,7 +434,6 @@ def train(
         seed=seed,
     )
     ds_va = SeptumWindowDataset(
-        working_dir,
         va_df,
         L_min=L_min,
         L_max=L_max,
@@ -415,11 +472,10 @@ def train(
     )
 
     # loss weights (computed from TRAIN SPLIT manifest)
-    s_w, e_w = compute_pos_weight_from_manifest(tr_df)
-    print(f"[pos_weight] start={s_w:.3f} end={e_w:.3f} (neg/pos on train split)")
+    (s_w,) = compute_pos_weight_from_manifest(tr_df)
+    logger.info(f"[pos_weight] state={s_w:.3f} (neg/pos on train split)")
 
-    bce_s = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([s_w], device=device))
-    bce_e = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([e_w], device=device))
+    bce_state = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([s_w], device=device))
 
     # model/opt
     model = EndpointMIL(D=D).to(device)
@@ -427,7 +483,7 @@ def train(
 
     start_epoch = 1
     if resume_from and os.path.isfile(resume_from):
-        print(f"Resuming from checkpoint: {resume_from}")
+        logger.info(f"Resuming from checkpoint: {resume_from}")
         chkpt = torch.load(resume_from, map_location=device, weights_only=True)
         model.load_state_dict(chkpt["state_dict"])
         import re
@@ -435,8 +491,11 @@ def train(
         if m:
             start_epoch = int(m.group(1)) + 1
 
-    ckpt_dir = os.path.join(working_dir, "training_dataset", "checkpoints_binary")
+    ckpt_dir = os.path.join(working_dirs[0], "training_dataset", "checkpoints_binary")
     os.makedirs(ckpt_dir, exist_ok=True)
+
+    # Fix 4: Track best val_loss for early-stopping checkpoint
+    best_val_loss = float("inf")
 
     for ep in range(start_epoch, epochs + 1):
         model.train()
@@ -446,11 +505,16 @@ def train(
         for batch in tqdm(dl_tr, desc=f"Epoch {ep:03d}/{epochs}", ncols=100):
             x = batch["x"].to(device)
             mask = batch["mask"].to(device)
-            y_s = batch["y_start"].to(device)
-            y_e = batch["y_end"].to(device)
+            y_state = batch["y_state"].to(device)
 
-            _, _, s_win, e_win = model(x, mask)
-            loss = bce_s(s_win, y_s) + bce_e(e_win, y_e)
+            state_t = model(x, mask)
+
+            # Flatten state_t and y_state using mask
+            valid_idx = (mask == 1.0)
+            state_t_flat = state_t[valid_idx]
+            y_state_flat = y_state[valid_idx]
+
+            loss = bce_state(state_t_flat, y_state_flat)
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -461,11 +525,21 @@ def train(
             n += b
 
         tr_loss = running / max(1, n)
-        va_loss, va_acc_s, va_acc_e = eval_epoch(model, dl_va, device, bce_s, bce_e)
+        va_loss, va_acc_state = eval_epoch(model, dl_va, device, bce_state)
 
-        print(
+        # Fix 4: Save best checkpoint whenever val_loss improves
+        tag = ""
+        if va_loss < best_val_loss:
+            best_val_loss = va_loss
+            torch.save(
+                {"state_dict": model.state_dict(), "D": D},
+                os.path.join(ckpt_dir, "model_best.pt"),
+            )
+            tag = "  [best]"
+
+        logger.info(
             f"[ep {ep:03d}] train_loss={tr_loss:.4f} "
-            f"val_loss={va_loss:.4f} val_acc_start={va_acc_s:.3f} val_acc_end={va_acc_e:.3f}"
+            f"val_loss={va_loss:.4f} val_acc_state={va_acc_state:.3f}{tag}"
         )
 
         torch.save(
@@ -473,7 +547,9 @@ def train(
             os.path.join(ckpt_dir, f"model_ep{ep:03d}.pt"),
         )
 
+    # Always save final epoch too (for resume)
     torch.save({"state_dict": model.state_dict(), "D": D}, os.path.join(ckpt_dir, "model_latest.pt"))
+    logger.info(f"Best val_loss={best_val_loss:.4f} → saved as model_best.pt")
     return model
 
 
@@ -486,17 +562,16 @@ def score_full_strip(model: EndpointMIL, x_full: torch.Tensor, device: str):
     Score a full strip in one pass (fast):
       x_full: (L,1,H,W) float32 in [0,1]
     Returns:
-      start_prob_t, end_prob_t: (L,) per-tile probabilities
+      state_prob_t: (L,) per-tile probabilities
     """
     model.eval()
     L = x_full.shape[0]
     x = x_full[None, ...].to(device)  # (1,L,1,H,W)
     mask = torch.ones((1, L), device=device)
 
-    start_t, end_t, _, _ = model(x, mask)
-    start_prob_t = torch.sigmoid(start_t[0]).detach().cpu()
-    end_prob_t = torch.sigmoid(end_t[0]).detach().cpu()
-    return start_prob_t, end_prob_t
+    state_t = model(x, mask)
+    state_prob_t = torch.sigmoid(state_t[0]).detach().cpu()
+    return state_prob_t
 
 
 @torch.no_grad()
@@ -505,18 +580,18 @@ def sliding_window_scores(model: EndpointMIL, x_full: torch.Tensor, window: int 
     Literal sliding window: returns per-window probabilities.
       x_full: (L,1,H,W)
     Returns:
-      start_win_probs, end_win_probs: (num_windows,)
+      state_win_probs: (num_windows,)
     """
     model.eval()
     L = x_full.shape[0]
-    outs_s, outs_e = [], []
+    outs_state = []
     for j in range(0, L - window + 1, stride):
         x = x_full[j:j+window][None, ...].to(device)  # (1,window,1,H,W)
         mask = torch.ones((1, window), device=device)
-        _, _, s_win, e_win = model(x, mask)
-        outs_s.append(torch.sigmoid(s_win).item())
-        outs_e.append(torch.sigmoid(e_win).item())
-    return np.array(outs_s), np.array(outs_e)
+        state_t = model(x, mask)
+        # Using the max state in the window just for legacy sliding window scoring
+        outs_state.append(torch.sigmoid(state_t).max().item())
+    return np.array(outs_state)
 
 
 # =========================
@@ -526,7 +601,7 @@ if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("working_dir")
+    ap.add_argument("working_dirs", nargs="+", help="One or more working directories")
     ap.add_argument("--D", type=int, default=64)
     ap.add_argument("--batch_size", type=int, default=16)
     ap.add_argument("--epochs", type=int, default=20)
@@ -544,7 +619,7 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     train(
-        args.working_dir,
+        args.working_dirs,
         D=args.D,
         batch_size=args.batch_size,
         epochs=args.epochs,
