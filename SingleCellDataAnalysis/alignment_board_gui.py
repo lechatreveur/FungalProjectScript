@@ -156,6 +156,7 @@ def review_septum_alignment_board_gui(
 
     hide_text = fig.text(0.55, 0.05, "Hide No Septum: OFF (h)", color="gray", fontweight='bold')
     no_sep_status_text = fig.text(0.75, 0.05, "No Septum: OFF (n)", color="gray", fontweight='bold')
+    saliency_text = fig.text(0.35, 0.05, "AI Saliency: OFF (V)", color="gray", fontweight='bold')
 
     selection_patches = [Rectangle((0,0),1,1, facecolor=(0.2,0.8,1,0.2), visible=False, zorder=9) for _ in range(n_rows)]
     white_sep_patches = [Rectangle((0,0),1,1, facecolor=(1,0.9,0,0.2), visible=False, zorder=8) for _ in range(n_rows)]
@@ -172,8 +173,10 @@ def review_septum_alignment_board_gui(
     pinned_global_idx = None
     pinned_cell_key = None
     hide_no_septum = False
+    show_saliency = False
     
     sheet_artist = None
+    saliency_artist = None
     render_meta = {"row_keys": []}
     last_row_start = -1
     last_visible_keys = []
@@ -305,6 +308,9 @@ def review_septum_alignment_board_gui(
         
         if sheet_artist is None:
             sheet_artist = ax_sheet.imshow(sheet, cmap="gray", origin="upper", aspect="equal")
+            # Saliency overlay artist (placeholder size)
+            shape4 = (sheet.shape[0], sheet.shape[1], 4)
+            saliency_artist = ax_sheet.imshow(np.zeros(shape4), origin="upper", aspect="equal", zorder=15, visible=False)
             ax_sheet.axis("off")
         else:
             sheet_artist.set_data(sheet)
@@ -380,7 +386,7 @@ def review_septum_alignment_board_gui(
                 _set_active_row_by_index(row_idx)
 
     def on_key(event):
-        nonlocal a_left_map, hide_no_septum, active_row_idx
+        nonlocal a_left_map, hide_no_septum, active_row_idx, show_saliency
         if not event.key: return
         k = event.key.lower()
         
@@ -484,6 +490,12 @@ def review_septum_alignment_board_gui(
             _render_heavy(force=True)
             _set_active_row_by_index(active_row_idx)
 
+        elif k == "v":
+            show_saliency = not show_saliency
+            saliency_text.set_text(f"AI Saliency: {'ON' if show_saliency else 'OFF'} (V)")
+            saliency_text.set_color("red" if show_saliency else "gray")
+            _render_light()
+
         elif k in (",", ".", "[", "]"):
             if active_cell_key:
                 d = {",": -row_stride_keys[0], ".": row_stride_keys[0], "[": -row_stride_keys[1], "]": row_stride_keys[1]}[k]
@@ -569,6 +581,10 @@ def review_septum_alignment_board_gui(
         if pred_span is not None:
             for item in pred_span: item.remove()
             pred_span = None
+        
+        if saliency_artist:
+            saliency_artist.set_visible(False)
+            
         if inference_runner is None or active_cell_key is None: return
         
         fname, cid = active_cell_key
@@ -589,13 +605,46 @@ def review_septum_alignment_board_gui(
         )
         
         if strip is not None and strip.shape[1] > 0:
-            probs = inference_runner.predict_strip(strip)
+            if show_saliency:
+                probs, smap = inference_runner.predict_saliency(strip)
+            else:
+                probs = inference_runner.predict_strip(strip)
+                smap = None
+                
             if probs is not None:
                 off = offsets.get(active_cell_key, 0)
                 x = np.arange(len(probs)) + tp0 + off
                 pred_span = ax_time.plot(x, probs, color="green", alpha=0.6, linewidth=1)
                 best_idx = np.argmax(probs)
                 pred_text.set_text(f"AI Peak: {int(x[best_idx])} ({probs[best_idx]:.1%})")
+                
+                # Saliency Overlay
+                if show_saliency and smap is not None and saliency_artist is not None and sheet_artist is not None:
+                    stride = tile_size + tile_gap
+                    y0 = active_row_idx * stride
+                    
+                    # Create full-sheet sized overlay grid precisely aligned with current view
+                    smap_full = np.zeros(sheet_artist.get_array().shape[:2], dtype=float)
+                    
+                    a_left = int(a_left_map.get(active_cell_key[0], 0))
+                    for j in range(n_cols):
+                        tp = int((a_left + j) - off)
+                        idx = tp - tp0
+                        if 0 <= idx < len(probs):
+                            x_src = idx * tile_size
+                            x_dst = j * (tile_size + tile_gap)
+                            # Slide target cell frame onto global graphic layout sheet
+                            smap_full[y0:y0+tile_size, x_dst:x_dst+tile_size] = smap[:, x_src:x_src+tile_size]
+                            
+                    # Convert to RGBA for pure overlay transparency
+                    import matplotlib.cm as cm
+                    rgba = plt.cm.hot(smap_full)
+                    alpha_mask = smap_full * 0.6  # 60% opacity max at peaks
+                    alpha_mask[smap_full < 0.15] = 0.0 # Make noise invisible
+                    rgba[..., 3] = alpha_mask
+
+                    saliency_artist.set_data(rgba)
+                    saliency_artist.set_visible(True)
             else:
                 pred_text.set_text("AI Error")
         else:

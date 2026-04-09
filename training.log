@@ -1,0 +1,163 @@
+2026-04-03 15:56:25,269 [INFO] [pos_weight] state=4.226 (neg/pos on train split)
+2026-04-03 15:57:13,846 [INFO] [ep 001] train_loss=0.9778 val_loss=1.4016 val_acc_state=0.010  [best]
+2026-04-03 15:58:17,354 [INFO] [ep 002] train_loss=0.9177 val_loss=1.0326 val_acc_state=0.014  [best]
+2026-04-03 15:59:32,806 [INFO] [ep 003] train_loss=1.0182 val_loss=0.9719 val_acc_state=0.048  [best]
+2026-04-03 16:00:48,971 [INFO] [ep 004] train_loss=0.8861 val_loss=1.0511 val_acc_state=0.056
+2026-04-03 16:02:11,496 [INFO] [ep 005] train_loss=0.8905 val_loss=1.1094 val_acc_state=0.039
+2026-04-03 16:03:52,925 [INFO] [ep 006] train_loss=0.9044 val_loss=1.0772 val_acc_state=0.028
+2026-04-03 16:05:22,732 [INFO] [ep 007] train_loss=0.9511 val_loss=1.2937 val_acc_state=0.060
+2026-04-03 16:07:25,392 [INFO] [ep 008] train_loss=0.9206 val_loss=1.1293 val_acc_state=0.053
+2026-04-03 16:09:10,533 [INFO] [ep 009] train_loss=0.9233 val_loss=1.4057 val_acc_state=0.060
+2026-04-03 16:10:39,750 [INFO] [ep 010] train_loss=0.9431 val_loss=1.0644 val_acc_state=0.061
+2026-04-03 16:11:32,276 [INFO] [ep 011] train_loss=0.8434 val_loss=1.0231 val_acc_state=0.050
+2026-04-03 16:12:51,214 [INFO] [ep 012] train_loss=0.9764 val_loss=0.9963 val_acc_state=0.054
+2026-04-03 16:14:05,525 [INFO] [ep 013] train_loss=0.8151 val_loss=1.2347 val_acc_state=0.059
+2026-04-03 16:15:18,725 [INFO] [ep 014] train_loss=0.7927 val_loss=1.5986 val_acc_state=0.061
+2026-04-06 19:06:45,995 [INFO] [pos_weight] state=10.241 (neg/pos on train split)
+2026-04-06 19:07:34,063 [INFO] [ep 001] train_loss=1.7131 val_loss=1.4695 val_acc_state=0.068  [best]
+2026-04-06 19:09:14,890 [INFO] [ep 002] train_loss=1.5518 val_loss=1.3008 val_acc_state=0.035  [best]
+2026-04-06 19:10:35,110 [INFO] [ep 003] train_loss=1.5147 val_loss=1.1615 val_acc_state=0.029  [best]
+2026-04-06 19:11:33,633 [INFO] [ep 004] train_loss=1.4716 val_loss=1.2106 val_acc_state=0.036
+2026-04-06 19:13:04,072 [INFO] [ep 005] train_loss=1.3436 val_loss=1.9103 val_acc_state=0.011
+2026-04-06 19:14:09,409 [INFO] [ep 006] train_loss=1.3549 val_loss=2.0499 val_acc_state=0.016
+2026-04-06 19:15:41,221 [INFO] [ep 007] train_loss=1.2691 val_loss=1.1790 val_acc_state=0.029
+2026-04-06 19:17:04,808 [INFO] [ep 008] train_loss=1.0645 val_loss=1.0502 val_acc_state=0.050  [best]
+2026-04-06 19:18:15,778 [INFO] [ep 009] train_loss=0.9825 val_loss=1.2479 val_acc_state=0.053
+2026-04-06 19:19:56,582 [INFO] [ep 010] train_loss=0.8366 val_loss=2.2509 val_acc_state=0.068
+2026-04-06 19:21:50,783 [INFO] [ep 011] train_loss=0.8525 val_loss=1.0649 val_acc_state=0.059
+2026-04-06 19:23:42,945 [INFO] [ep 012] train_loss=0.8730 val_loss=2.1342 val_acc_state=0.067
+2026-04-06 19:25:39,106 [INFO] [ep 013] train_loss=0.8885 val_loss=2.5821 val_acc_state=0.011
+2026-04-06 19:27:11,135 [INFO] [ep 014] train_loss=0.8695 val_loss=1.6882 val_acc_state=0.060
+2026-04-06 19:28:28,028 [INFO] [ep 015] train_loss=0.8213 val_loss=3.2744 val_acc_state=0.009
+2026-04-06 19:30:04,548 [INFO] [ep 016] train_loss=0.8379 val_loss=1.3766 val_acc_state=0.051
+2026-04-06 19:31:35,418 [INFO] [ep 017] train_loss=0.6740 val_loss=1.0070 val_acc_state=0.055  [best]
+2026-04-06 19:32:40,305 [INFO] [ep 018] train_loss=0.7065 val_loss=1.1682 val_acc_state=0.050
+2026-04-06 19:33:55,717 [INFO] [ep 019] train_loss=0.7602 val_loss=1.0797 val_acc_state=0.050
+2026-04-06 19:35:50,664 [INFO] [ep 020] train_loss=0.6878 val_loss=1.4630 val_acc_state=0.058
+2026-04-06 19:38:00,221 [INFO] [ep 021] train_loss=0.5938 val_loss=2.6515 val_acc_state=0.067
+2026-04-06 19:39:47,806 [INFO] [ep 022] train_loss=0.4546 val_loss=1.3074 val_acc_state=0.038
+2026-04-06 19:41:30,754 [INFO] [ep 023] train_loss=0.4567 val_loss=1.4507 val_acc_state=0.047
+2026-04-06 19:42:57,299 [INFO] [ep 024] train_loss=0.5662 val_loss=1.3500 val_acc_state=0.057
+2026-04-06 19:44:38,627 [INFO] [ep 025] train_loss=0.5240 val_loss=3.0463 val_acc_state=0.068
+2026-04-06 19:46:03,904 [INFO] [ep 026] train_loss=0.4554 val_loss=1.6812 val_acc_state=0.059
+2026-04-06 19:47:47,000 [INFO] [ep 027] train_loss=0.5219 val_loss=1.3852 val_acc_state=0.062
+2026-04-06 19:49:37,637 [INFO] [ep 028] train_loss=0.5222 val_loss=1.5064 val_acc_state=0.061
+2026-04-06 19:51:40,748 [INFO] [ep 029] train_loss=0.8276 val_loss=1.3583 val_acc_state=0.063
+2026-04-06 19:53:58,678 [INFO] [ep 030] train_loss=0.8465 val_loss=2.3388 val_acc_state=0.015
+2026-04-06 19:53:58,815 [INFO] Best val_loss=1.0070 → saved as model_best.pt
+2026-04-07 12:54:32,733 [INFO] [pos_weight] state=11.821 (neg/pos on train split)
+2026-04-07 12:55:58,142 [INFO] [ep 001] train_loss=1.8999 val_loss=1.1632 val_acc_state=0.062  [best]
+2026-04-07 12:57:56,026 [INFO] [ep 002] train_loss=1.7040 val_loss=1.1298 val_acc_state=0.053  [best]
+2026-04-07 12:59:35,913 [INFO] [ep 003] train_loss=1.7053 val_loss=1.8898 val_acc_state=0.008
+2026-04-07 13:01:33,556 [INFO] [ep 004] train_loss=1.5736 val_loss=1.0207 val_acc_state=0.061  [best]
+2026-04-07 13:04:01,705 [INFO] [ep 005] train_loss=1.5806 val_loss=1.5467 val_acc_state=0.015
+2026-04-07 13:05:41,485 [INFO] [ep 006] train_loss=1.5497 val_loss=0.8918 val_acc_state=0.062  [best]
+2026-04-07 13:07:50,755 [INFO] [ep 007] train_loss=1.3751 val_loss=2.3860 val_acc_state=0.012
+2026-04-07 13:10:17,441 [INFO] [ep 008] train_loss=1.3959 val_loss=0.9290 val_acc_state=0.047
+2026-04-07 13:12:30,110 [INFO] [ep 009] train_loss=1.2823 val_loss=2.6146 val_acc_state=0.020
+2026-04-07 13:15:21,898 [INFO] [ep 010] train_loss=1.3439 val_loss=0.9940 val_acc_state=0.046
+2026-04-07 13:18:23,918 [INFO] [ep 011] train_loss=1.2300 val_loss=0.9801 val_acc_state=0.046
+2026-04-07 13:21:34,916 [INFO] [ep 012] train_loss=1.2150 val_loss=1.5322 val_acc_state=0.038
+2026-04-07 13:23:59,265 [INFO] [ep 013] train_loss=1.2933 val_loss=0.8442 val_acc_state=0.062  [best]
+2026-04-07 13:27:01,625 [INFO] [ep 014] train_loss=1.2199 val_loss=0.8656 val_acc_state=0.057
+2026-04-07 13:29:46,022 [INFO] [ep 015] train_loss=1.0130 val_loss=0.8180 val_acc_state=0.063  [best]
+2026-04-07 13:32:17,934 [INFO] [ep 016] train_loss=1.0015 val_loss=0.6787 val_acc_state=0.061  [best]
+2026-04-07 13:34:55,614 [INFO] [ep 017] train_loss=1.0898 val_loss=0.9640 val_acc_state=0.066
+2026-04-07 13:37:44,342 [INFO] [ep 018] train_loss=1.1464 val_loss=0.7592 val_acc_state=0.057
+2026-04-07 13:40:23,405 [INFO] [ep 019] train_loss=0.9806 val_loss=0.8161 val_acc_state=0.064
+2026-04-07 13:43:07,378 [INFO] [ep 020] train_loss=0.8803 val_loss=0.7627 val_acc_state=0.060
+2026-04-07 13:45:17,058 [INFO] [ep 021] train_loss=0.9866 val_loss=1.7902 val_acc_state=0.068
+2026-04-07 13:47:23,341 [INFO] [ep 022] train_loss=1.0887 val_loss=0.7115 val_acc_state=0.057
+2026-04-07 13:49:26,161 [INFO] [ep 023] train_loss=0.8129 val_loss=0.8936 val_acc_state=0.052
+2026-04-07 13:52:06,373 [INFO] [ep 024] train_loss=0.8675 val_loss=0.6700 val_acc_state=0.059  [best]
+2026-04-07 13:55:14,176 [INFO] [ep 025] train_loss=0.9189 val_loss=0.7661 val_acc_state=0.061
+2026-04-07 13:58:00,458 [INFO] [ep 026] train_loss=0.8120 val_loss=1.2165 val_acc_state=0.033
+2026-04-07 14:01:08,494 [INFO] [ep 027] train_loss=0.7222 val_loss=0.8834 val_acc_state=0.067
+2026-04-07 14:03:05,664 [INFO] [ep 028] train_loss=0.6046 val_loss=0.8540 val_acc_state=0.065
+2026-04-07 14:05:56,785 [INFO] [ep 029] train_loss=0.8099 val_loss=0.9400 val_acc_state=0.066
+2026-04-07 14:08:12,453 [INFO] [ep 030] train_loss=1.0457 val_loss=1.0250 val_acc_state=0.063
+2026-04-07 14:08:12,600 [INFO] Best val_loss=0.6700 → saved as model_best.pt
+2026-04-08 11:54:22,558 [INFO] [pos_weight] state=7.955 (neg/pos on train split)
+2026-04-08 11:57:58,124 [INFO] [ep 001] train_loss=1.4735 val_loss=1.0665 val_acc_state=0.022  [best]
+2026-04-08 12:01:31,093 [INFO] [ep 002] train_loss=1.4233 val_loss=0.9799 val_acc_state=0.033  [best]
+2026-04-08 12:05:26,440 [INFO] [ep 003] train_loss=1.3479 val_loss=1.0571 val_acc_state=0.026
+2026-04-08 12:09:07,072 [INFO] [ep 004] train_loss=1.2882 val_loss=0.9887 val_acc_state=0.028
+2026-04-08 12:12:29,998 [INFO] [ep 005] train_loss=1.2835 val_loss=0.7741 val_acc_state=0.050  [best]
+2026-04-08 12:15:23,847 [INFO] [ep 006] train_loss=1.1444 val_loss=0.7809 val_acc_state=0.041
+2026-04-08 12:19:06,847 [INFO] [ep 007] train_loss=1.1976 val_loss=1.3051 val_acc_state=0.019
+2026-04-08 12:22:54,170 [INFO] [ep 008] train_loss=1.1406 val_loss=0.7585 val_acc_state=0.056  [best]
+2026-04-08 12:26:22,250 [INFO] [ep 009] train_loss=1.1128 val_loss=1.3983 val_acc_state=0.025
+2026-04-08 12:30:01,336 [INFO] [ep 010] train_loss=1.0805 val_loss=0.9614 val_acc_state=0.032
+2026-04-08 12:34:04,510 [INFO] [ep 011] train_loss=1.0941 val_loss=0.8086 val_acc_state=0.039
+2026-04-08 12:38:13,978 [INFO] [ep 012] train_loss=1.1321 val_loss=1.0922 val_acc_state=0.027
+2026-04-08 12:42:16,982 [INFO] [ep 013] train_loss=0.9525 val_loss=0.7746 val_acc_state=0.049
+2026-04-08 12:45:42,883 [INFO] [ep 014] train_loss=1.0027 val_loss=0.7036 val_acc_state=0.045  [best]
+2026-04-08 12:49:33,178 [INFO] [ep 015] train_loss=0.9400 val_loss=0.6354 val_acc_state=0.052  [best]
+2026-04-08 12:54:07,617 [INFO] [ep 016] train_loss=0.8927 val_loss=0.9518 val_acc_state=0.037
+2026-04-08 12:58:06,393 [INFO] [ep 017] train_loss=0.8993 val_loss=1.1616 val_acc_state=0.029
+2026-04-08 13:02:51,670 [INFO] [ep 018] train_loss=0.8951 val_loss=0.6151 val_acc_state=0.051  [best]
+2026-04-08 13:07:56,933 [INFO] [ep 019] train_loss=0.8418 val_loss=0.7686 val_acc_state=0.045
+2026-04-08 13:12:39,304 [INFO] [ep 020] train_loss=0.7924 val_loss=1.1987 val_acc_state=0.034
+2026-04-08 13:17:24,881 [INFO] [ep 021] train_loss=0.8411 val_loss=0.6595 val_acc_state=0.049
+2026-04-08 13:21:51,275 [INFO] [ep 022] train_loss=0.7645 val_loss=1.4812 val_acc_state=0.031
+2026-04-08 13:25:41,096 [INFO] [ep 023] train_loss=0.8199 val_loss=0.6458 val_acc_state=0.054
+2026-04-08 13:29:32,459 [INFO] [ep 024] train_loss=0.7157 val_loss=1.0527 val_acc_state=0.037
+2026-04-08 13:33:16,205 [INFO] [ep 025] train_loss=0.7076 val_loss=1.5612 val_acc_state=0.030
+2026-04-08 13:37:46,873 [INFO] [ep 026] train_loss=0.7413 val_loss=0.8494 val_acc_state=0.043
+2026-04-08 13:41:38,360 [INFO] [ep 027] train_loss=0.6921 val_loss=1.1112 val_acc_state=0.061
+2026-04-08 13:45:30,414 [INFO] [ep 028] train_loss=0.6713 val_loss=0.6287 val_acc_state=0.057
+2026-04-08 13:48:48,889 [INFO] [ep 029] train_loss=0.7006 val_loss=0.5680 val_acc_state=0.056  [best]
+2026-04-08 13:52:02,429 [INFO] [ep 030] train_loss=0.6617 val_loss=1.0390 val_acc_state=0.039
+2026-04-08 13:56:19,830 [INFO] [ep 031] train_loss=0.6895 val_loss=0.7095 val_acc_state=0.047
+2026-04-08 13:59:44,719 [INFO] [ep 032] train_loss=0.6791 val_loss=0.7097 val_acc_state=0.055
+2026-04-08 14:03:18,789 [INFO] [ep 033] train_loss=0.6463 val_loss=0.9753 val_acc_state=0.062
+2026-04-08 14:06:27,801 [INFO] [ep 034] train_loss=0.6737 val_loss=0.7334 val_acc_state=0.058
+2026-04-08 14:10:06,599 [INFO] [ep 035] train_loss=0.5936 val_loss=0.5825 val_acc_state=0.060
+2026-04-08 14:14:05,261 [INFO] [ep 036] train_loss=0.6217 val_loss=1.1751 val_acc_state=0.060
+2026-04-08 14:17:33,483 [INFO] [ep 037] train_loss=0.7072 val_loss=0.6077 val_acc_state=0.056
+2026-04-08 14:21:27,738 [INFO] [ep 038] train_loss=0.6229 val_loss=0.8734 val_acc_state=0.045
+2026-04-08 14:24:55,140 [INFO] [ep 039] train_loss=0.5997 val_loss=0.5851 val_acc_state=0.053
+2026-04-08 14:28:46,757 [INFO] [ep 040] train_loss=0.5837 val_loss=0.5803 val_acc_state=0.056
+2026-04-08 14:28:46,885 [INFO] Best val_loss=0.5680 → saved as model_best.pt
+2026-04-08 17:02:59,901 [INFO] [pos_weight] state=7.712 (neg/pos on train split)
+2026-04-08 17:06:11,410 [INFO] [ep 001] train_loss=1.5392 val_loss=1.0635 val_acc_state=0.019  [best]
+2026-04-08 17:10:06,986 [INFO] [ep 002] train_loss=1.4545 val_loss=1.0012 val_acc_state=0.026  [best]
+2026-04-08 17:13:20,984 [INFO] [ep 003] train_loss=1.4419 val_loss=1.0597 val_acc_state=0.023
+2026-04-08 17:17:43,318 [INFO] [ep 004] train_loss=1.4194 val_loss=1.0317 val_acc_state=0.026
+2026-04-08 17:21:24,705 [INFO] [ep 005] train_loss=1.3893 val_loss=0.8872 val_acc_state=0.039  [best]
+2026-04-08 17:25:21,037 [INFO] [ep 006] train_loss=1.3105 val_loss=0.9610 val_acc_state=0.031
+2026-04-08 17:29:05,712 [INFO] [ep 007] train_loss=1.3501 val_loss=1.3825 val_acc_state=0.015
+2026-04-08 17:32:44,629 [INFO] [ep 008] train_loss=1.3312 val_loss=0.9410 val_acc_state=0.034
+2026-04-08 17:36:19,270 [INFO] [ep 009] train_loss=1.2899 val_loss=1.1943 val_acc_state=0.021
+2026-04-08 17:40:28,017 [INFO] [ep 010] train_loss=1.3334 val_loss=0.9799 val_acc_state=0.034
+2026-04-08 17:44:05,110 [INFO] [ep 011] train_loss=1.2790 val_loss=1.1561 val_acc_state=0.016
+2026-04-08 17:48:02,775 [INFO] [ep 012] train_loss=1.3187 val_loss=0.8130 val_acc_state=0.040  [best]
+2026-04-08 17:51:44,653 [INFO] [ep 013] train_loss=1.2661 val_loss=1.2606 val_acc_state=0.016
+2026-04-08 17:55:08,784 [INFO] [ep 014] train_loss=1.2634 val_loss=1.0498 val_acc_state=0.028
+2026-04-08 17:58:14,428 [INFO] [ep 015] train_loss=1.2539 val_loss=1.1992 val_acc_state=0.026
+2026-04-08 18:01:14,455 [INFO] [ep 016] train_loss=1.1661 val_loss=0.6933 val_acc_state=0.054  [best]
+2026-04-08 18:06:08,743 [INFO] [ep 017] train_loss=1.1916 val_loss=0.9882 val_acc_state=0.031
+2026-04-08 18:10:54,073 [INFO] [ep 018] train_loss=1.1896 val_loss=1.2269 val_acc_state=0.024
+2026-04-08 18:15:40,973 [INFO] [ep 019] train_loss=1.1855 val_loss=0.7490 val_acc_state=0.053
+2026-04-08 18:36:09,191 [INFO] [ep 020] train_loss=1.1445 val_loss=0.7192 val_acc_state=0.048
+2026-04-08 18:40:24,745 [INFO] [ep 021] train_loss=1.0406 val_loss=0.7786 val_acc_state=0.057
+2026-04-08 18:46:12,768 [INFO] [ep 022] train_loss=1.0444 val_loss=0.7152 val_acc_state=0.048
+2026-04-08 18:53:53,723 [INFO] [ep 023] train_loss=0.9903 val_loss=1.4700 val_acc_state=0.021
+2026-04-08 18:59:08,273 [INFO] [ep 024] train_loss=0.9983 val_loss=0.7485 val_acc_state=0.048
+2026-04-08 19:05:16,464 [INFO] [ep 025] train_loss=1.0156 val_loss=1.0270 val_acc_state=0.031
+2026-04-08 19:13:21,407 [INFO] [ep 026] train_loss=1.0431 val_loss=0.7339 val_acc_state=0.051
+2026-04-08 19:20:57,320 [INFO] [ep 027] train_loss=1.0213 val_loss=0.9404 val_acc_state=0.039
+2026-04-08 19:28:57,020 [INFO] [ep 028] train_loss=1.0624 val_loss=2.0413 val_acc_state=0.009
+2026-04-08 19:36:54,199 [INFO] [ep 029] train_loss=1.0315 val_loss=0.8314 val_acc_state=0.041
+2026-04-08 19:44:25,465 [INFO] [ep 030] train_loss=1.0033 val_loss=0.6937 val_acc_state=0.056
+2026-04-08 19:51:34,035 [INFO] [ep 031] train_loss=0.9618 val_loss=1.3669 val_acc_state=0.023
+2026-04-08 19:58:18,566 [INFO] [ep 032] train_loss=0.9264 val_loss=1.0560 val_acc_state=0.058
+2026-04-08 20:05:29,237 [INFO] [ep 033] train_loss=0.9287 val_loss=1.0328 val_acc_state=0.059
+2026-04-08 20:12:52,801 [INFO] [ep 034] train_loss=0.9237 val_loss=0.7273 val_acc_state=0.055
+2026-04-08 20:19:56,503 [INFO] [ep 035] train_loss=0.9758 val_loss=0.7780 val_acc_state=0.050
+2026-04-08 20:26:53,168 [INFO] [ep 036] train_loss=0.8699 val_loss=0.7848 val_acc_state=0.047
+2026-04-08 20:50:14,890 [INFO] [ep 037] train_loss=0.9049 val_loss=0.8108 val_acc_state=0.043
+2026-04-08 20:54:21,336 [INFO] [ep 038] train_loss=0.8591 val_loss=0.6471 val_acc_state=0.053  [best]
+2026-04-08 20:59:11,120 [INFO] [ep 039] train_loss=0.8448 val_loss=0.8241 val_acc_state=0.056
+2026-04-08 21:06:08,996 [INFO] [ep 040] train_loss=0.8328 val_loss=0.7190 val_acc_state=0.049
+2026-04-08 21:06:09,272 [INFO] Best val_loss=0.6471 → saved as model_best.pt

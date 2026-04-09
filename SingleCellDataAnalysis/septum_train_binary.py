@@ -195,11 +195,9 @@ class SeptumWindowDataset(Dataset):
         jitter = float(self.rng.uniform(-0.2, 0.2))
         x = np.clip(x + jitter, 0.0, 1.0).astype(np.float32)
 
-        # Per-cell polarity inversion for white-septum cells (GUI-labeled).
-        # Deterministic (not random) — only inverts cells the user explicitly flagged
-        # via the 'i' key in the alignment board GUI. This avoids the model-collapse
-        # caused by random 50% inversion on small datasets.
-        if bool(row.get("white_septum", False)):
+        # Random polarity inversion to train the model to be polarity-invariant
+        # so it learns to natively predict both dark valleys and bright white septums.
+        if self.rng.random() < 0.5:
             x = (1.0 - x).astype(np.float32)
 
 

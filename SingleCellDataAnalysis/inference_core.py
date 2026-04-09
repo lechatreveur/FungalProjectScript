@@ -82,7 +82,7 @@ class FungalInferenceCore:
             self.model.load_state_dict(chkpt)
             
     @torch.no_grad()
-    def predict_strip(self, strip_uint8: np.ndarray, window_size: int = 81):
+    def predict_strip(self, strip_uint8: np.ndarray):
         """
         Process a (H, H*L) numpy strip representing the cell across time.
         Returns the top-scoring start and end windows:
@@ -90,26 +90,63 @@ class FungalInferenceCore:
         """
         H = strip_uint8.shape[0]
         if strip_uint8.shape[1] % H != 0:
-            return None, None
+            return None
             
         L = strip_uint8.shape[1] // H
         if L < 5:
-            # Strip is too short for temporal CNN
-            return None, None
+            return None
             
         # Reshape to (L, 1, H, H) and normalize to [0,1]
         tiles = strip_uint8.reshape(H, L, H).transpose(1, 0, 2)[:, None, :, :]
         x_full = tiles.astype(np.float32) / 255.0
-        x_full = torch.from_numpy(x_full).to(self.device)  # (L, 1, H, W)
+        x_full = torch.from_numpy(x_full).to(self.device).float()  # (L, 1, H, W)
         
         # Evaluate the entire sequence at once
         x_batch = x_full[None, ...] # (1, L, 1, H, W)
         mask = torch.ones((1, L), device=self.device)
         
         state_t = self.model(x_batch, mask)
-        
-        # Get frame-by-frame probabilities
         state_probs = torch.sigmoid(state_t)[0].cpu().numpy()
-        
-        # Return the frame-by-frame probability list directly
         return state_probs
+
+    def predict_saliency(self, strip_uint8: np.ndarray):
+        """
+        Calculates pixel-level saliency and frame-level probabilities.
+        Returns (probs, saliency_2d_strip)
+        """
+        H = strip_uint8.shape[0]
+        if strip_uint8.shape[1] % H != 0:
+            return None, None
+        L = strip_uint8.shape[1] // H
+        
+        tiles = strip_uint8.reshape(H, L, H).transpose(1, 0, 2)[:, None, :, :]
+        x_full = torch.from_numpy(tiles.astype(np.float32) / 255.0).to(self.device).float()
+        
+        # Enable gradients for saliency map
+        x = x_full[None, ...]  # (1, L, 1, H, W)
+        x.requires_grad_(True)
+        mask = torch.ones((1, L), device=self.device)
+        
+        # Forward pass
+        state_t = self.model(x, mask)
+        
+        # Backward from the probability peak
+        loss = state_t.max()
+        loss.backward()
+        
+        # Extract gradients
+        saliency = x.grad.abs().sum(dim=2).squeeze(0)  # (L, H, W)
+        saliency = saliency.cpu().numpy()
+        
+        # Normalize
+        s_max = saliency.max()
+        if s_max > 0:
+            saliency = saliency / s_max
+            
+        # Assemble back into a 2D strip for overlay (H, L*H)
+        saliency_strip = np.zeros_like(strip_uint8, dtype=float)
+        for i in range(L):
+            saliency_strip[:, i*H:(i+1)*H] = saliency[i]
+            
+        probs = torch.sigmoid(state_t)[0].detach().cpu().numpy()
+        return probs, saliency_strip

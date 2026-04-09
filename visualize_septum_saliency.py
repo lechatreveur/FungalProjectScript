@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 import matplotlib
 # Bypass Mac Qt conflicts
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 
@@ -61,7 +61,9 @@ def main():
     paths = build_film_paths(args.working_dir, args.film_name)
     
     print(f"Loading cell masks tracing database...")
-    cids, cell_csv_map = discover_cell_mask_csvs(paths.tracked_dir)
+    cids, raw_cell_csv_map = discover_cell_mask_csvs(paths.tracked_dir)
+    # Ensure MaskTableCache is indexed by (film_name, cid) to match ensure_strip_for_cell
+    cell_csv_map = {(args.film_name, cid): path for cid, path in raw_cell_csv_map.items()}
     masks = MaskTableCache(cell_csv_map, time_col="time_point", mask_col="rle_bf")
     offsets = {} # Optional offset structure
     
@@ -96,16 +98,20 @@ def main():
     # Load AI model framework
     device = "cpu"
     
-    # Calculate external weights path exactly identically to the runtime GUI
-    ckpt_path = os.path.join(args.working_dir, "training_dataset", "checkpoints_binary", "model_latest.pt")
-    
-    # Prefer model_best.pt (best val_loss) over model_latest.pt if available
-    best_path = ckpt_path.replace("model_latest.pt", "model_best.pt")
-    if os.path.isfile(best_path):
-        ckpt_path = best_path
-        print(f"Booting PyTorch Artificial Intelligence Core (model_best.pt)...")
+    # Calculate external weights path
+    if args.weights and os.path.isfile(args.weights):
+        ckpt_path = args.weights
+        print(f"Booting PyTorch Artificial Intelligence Core from explicit path ({os.path.basename(ckpt_path)})...")
     else:
-        print(f"Booting PyTorch Artificial Intelligence Core (model_latest.pt)...")
+        ckpt_path = os.path.join(args.working_dir, "training_dataset", "checkpoints_binary", "model_latest.pt")
+        # Prefer model_best.pt (best val_loss) over model_latest.pt if available
+        best_path = ckpt_path.replace("model_latest.pt", "model_best.pt")
+        if os.path.isfile(best_path):
+            ckpt_path = best_path
+            print(f"Booting PyTorch Artificial Intelligence Core (model_best.pt)...")
+        else:
+            print(f"Booting PyTorch Artificial Intelligence Core (model_latest.pt)...")
+            
     model = EndpointMIL(D=64).to(device)
     chkpt = torch.load(ckpt_path, map_location=device, weights_only=True)
     if "state_dict" in chkpt:
@@ -144,7 +150,7 @@ def main():
     
     plt.tight_layout()
     # Save the figure dynamically into the current folder so the AI can physically inspect the graph 
-    save_path = f"saliency_cell_{args.cell_id}.png"
+    save_path = f"saliency_{args.film_name}_cell_{args.cell_id}.png"
     fig.savefig(save_path, bbox_inches='tight', dpi=150)
     print(f"[Saved Image] Successfully authored to {save_path}")
     
