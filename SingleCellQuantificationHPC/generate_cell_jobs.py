@@ -13,7 +13,7 @@ import shutil
 
 
 # Function to create a SLURM job script for a single cell ID
-def create_cell_job_script(job_id, cell_id, working_dir, script_path,experiment_path,file_name,z_index, min_area, channel, update_existing=False):
+def create_cell_job_script(job_id, cell_id, working_dir, script_path,experiment_path,file_name,z_index, min_area, channel, update_existing=False, direction='both'):
     logs_dir = os.path.join(working_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
 
@@ -35,7 +35,7 @@ cd {working_dir}
 
 
 
-python {script_path} --xcorr_select off --xcorr_debug --cell_id {cell_id} --experiment_path {experiment_path} --file_name {file_name} --track_channel {channel} {update_flag}
+python {script_path} --xcorr_select off --xcorr_debug --cell_id {cell_id} --experiment_path {experiment_path} --file_name {file_name} --track_channel {channel} --direction {direction} {update_flag}
 
 
 
@@ -72,6 +72,7 @@ if __name__ == "__main__":
     parser.add_argument('-z', '--z_index', type=int, default=1, help="Z-slice index to load for segmentation.")
     parser.add_argument('-a', '--min_area', type=int, default=2500, help="Minimal cell area.")
     parser.add_argument('--update_existing', action='store_true', help="Retrack cells with masks files.")
+    parser.add_argument('--direction', choices=['forward', 'backward', 'both'], default='both', help="Tracking direction.")
     parser.add_argument(
         '--submit',
         choices=['auto', 'slurm', 'none', 'local'],
@@ -89,7 +90,7 @@ if __name__ == "__main__":
     os.makedirs(args.working_dir, exist_ok=True)
 
     for i, cell_id in enumerate(cell_ids, start=1):
-        job_script = create_cell_job_script(i, cell_id, args.working_dir, args.script_path, args.experiment_path, args.file_name, args.z_index, args.min_area, args.channel, update_existing=args.update_existing)
+        job_script = create_cell_job_script(i, cell_id, args.working_dir, args.script_path, args.experiment_path, args.file_name, args.z_index, args.min_area, args.channel, update_existing=args.update_existing, direction=args.direction)
         mode = args.submit
         has_sbatch = shutil.which("sbatch") is not None
         

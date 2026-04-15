@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/Volumes/Movies/2026_01_08_M93"
+ROOT="/Volumes/X10 Pro/Movies/2026_01_16_M96"
 PY_SCRIPT="make_population_movie.py"
 
 FPS=10

@@ -160,7 +160,7 @@ def review_septum_alignment_board_gui(
 
     selection_patches = [Rectangle((0,0),1,1, facecolor=(0.2,0.8,1,0.2), visible=False, zorder=9) for _ in range(n_rows)]
     white_sep_patches = [Rectangle((0,0),1,1, facecolor=(1,0.9,0,0.2), visible=False, zorder=8) for _ in range(n_rows)]
-    no_sep_patches = [Rectangle((0,0),1,1, facecolor=(1,0,0,0.2), visible=False, zorder=8) for _ in range(n_rows)]
+    no_sep_patches = [Rectangle((0,0),1,1, facecolor="purple", alpha=0.25, visible=False, zorder=8) for _ in range(n_rows)]
     for p in selection_patches: ax_sheet.add_patch(p)
     for p in white_sep_patches: ax_sheet.add_patch(p)
     for p in no_sep_patches: ax_sheet.add_patch(p)
@@ -204,7 +204,7 @@ def review_septum_alignment_board_gui(
             has_sep = cell_intervals.get(active_cell_key, {}).get("has_septum", True)
             is_no_sep = (has_sep is False)
             no_sep_status_text.set_text(f"No Septum: {'ON' if is_no_sep else 'OFF'} (n)")
-            no_sep_status_text.set_color("red" if is_no_sep else "gray")
+            no_sep_status_text.set_color("purple" if is_no_sep else "gray")
 
     def _toggle_white_septum():
         if active_cell_key:
@@ -477,7 +477,7 @@ def review_septum_alignment_board_gui(
         elif k == "h":
             hide_no_septum = not hide_no_septum
             hide_text.set_text(f"Hide No Septum: {'ON' if hide_no_septum else 'OFF'} (h)")
-            hide_text.set_color("red" if hide_no_septum else "gray")
+            hide_text.set_color("purple" if hide_no_septum else "gray")
             
             vk = _get_viewable_keys()
             v_max = max(0, len(vk) - n_rows)

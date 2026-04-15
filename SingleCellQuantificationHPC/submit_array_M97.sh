@@ -14,44 +14,47 @@ source ~/miniconda3/etc/profile.d/conda.sh
 conda activate cellpose_env
 
 WORKDIRS=(
-  "2026_01_16_M96"
+  "2026_01_18_M97"
 )
 
 BASE_EXP_ROOT="/home/hsushen/FungalProjectScript/SingleCellQuantificationHPC"
 BASE_MOVIE_ROOT="/RAID1/working/R402/hsushen/FungalProject/Movies"
 
 MOVIES=(
-  "A14_BF_1_F0"
-  "A14_BF_1_F1"
-  "A14_BF_1_F2"
-  "A14_BF_1_F3"
-  "A14_BF_2_F0"
-  "A14_BF_2_F1"
-  "A14_BF_2_F2"
-  "A14_BF_2_F3"
-  "A14_FL_1_F0"
-  "A14_FL_1_F1"
-  "A14_FL_1_F2"
-  "A14_FL_1_F3"
-  "A14_FL_2_F0"
-  "A14_FL_2_F1"
-  "A14_FL_2_F2"
-  "A14_FL_2_F3"
-  "A14_FL_3_F0"
-  "A14_FL_3_F1"
-  "A14_FL_3_F2"
-  "A14_FL_3_F3"
-  "A14_FL_4_F0"
-  "A14_FL_4_F1"
-  "A14_FL_4_F2"
-  "A14_FL_4_F3"
+  "A14-YES-t-0_F0"
+  "A14-YES-t-0_F1"
+  "A14-YES-t-0_F2"
+  "A14-YES-t-1_F0"
+  "A14-YES-t-1_F1"
+  "A14-YES-t-1_F2"
+  "A14-YES-t-2_F0"
+  "A14-YES-t-2_F1"
+  "A14-YES-t-2_F2"
+  "A14-YES-t-3_F0"
+  "A14-YES-t-3_F1"
+  "A14-YES-t-3_F2"
+  "A14-YES-t-4_F0"
+  "A14-YES-t-4_F1"
+  "A14-YES-t-4_F2"
+  "A14-YES-t-5_F0"
+  "A14-YES-t-5_F1"
+  "A14-YES-t-5_F2"
+  "A14-YES-t-6_F0"
+  "A14-YES-t-6_F1"
+  "A14-YES-t-6_F2"
 )
 
 is_bf_movie() {
   local name="$1"
-  # BF movies are identified by the token "_BF_"
-  [[ "$name" == *"_BF_"* ]]
+  # BF movies are -0, -2, -4, -6, -8 (underscore avoids matching -20, etc.)
+  [[ "$name" == *"-0_"* || "$name" == *"-2_"* || "$name" == *"-4_"* || "$name" == *"-6_"* || "$name" == *"-8_"* ]]
 }
+
+#is_bf_movie() {
+#  local name="$1"
+#  # BF movies are identified by the token "_BF_"
+#  [[ "$name" == *"_BF_"* ]]
+#}
 
 for wd in "${WORKDIRS[@]}"; do
   EXP_ROOT="${BASE_EXP_ROOT}/${wd}/"
@@ -91,7 +94,7 @@ for wd in "${WORKDIRS[@]}"; do
       --file_name "$file_name" \
       --output_base_dir "$EXP_ROOT" \
       --z_index 0 \
-      --min_area 2000
+      --min_area 2500
 
     cell_ids_path="$EXP_ROOT/$file_name/cell_ids.txt"
     if [ ! -f "$cell_ids_path" ]; then
@@ -109,7 +112,7 @@ for wd in "${WORKDIRS[@]}"; do
       -n 9 \
       -d 10 \
       -z 0 \
-      -a 2000 \
-      --direction forward 
+      -a 2500 \
+      --update_existing
   done
 done
