@@ -198,10 +198,11 @@ def run_field_sequence(
     iou_min: float = 0.01,
     gfp_rle_col="rle_gfp",
     bf_rle_col="rle_bf",
+    manifest_relpath: str = "training_dataset/pipeline_manifest.csv",
 ):
     os.makedirs(out_dir, exist_ok=True)
 
-    manifest = load_manifest(WORKING_DIR)
+    manifest = load_manifest(WORKING_DIR, relpath=manifest_relpath)
 
     bf_anchors = {}
     for kind, film in field_seq:

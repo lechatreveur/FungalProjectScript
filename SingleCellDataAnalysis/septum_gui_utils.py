@@ -912,6 +912,103 @@ def save_multi_state(
             print(f"[warn] Could not save state for {fname} (drive disconnected?): {e}")        
 
 
+import re as _re
+_FIELD_RE = _re.compile(r"_F(\d+)$")
 
 
+def export_manifest_from_json_states(
+    working_dir: str,
+    film_names: List[str],
+    out_relpath: str = "training_dataset/manifest.csv",
+) -> pd.DataFrame:
+    """
+    Bridge function: reads the per-film JSON states saved by the upgraded
+    multi-film alignment board GUI and regenerates training_dataset/manifest.csv
+    in the schema expected by load_manifest() / run_field_sequence().
+
+    Required manifest columns:
+        film_name | cell_id | has | offset | field
+
+    Call this immediately after the alignment board QC cells, before
+    run_field_sequence(), so the downstream pipeline has an up-to-date manifest.
+
+    Parameters
+    ----------
+    working_dir  : str  — experiment root (WORKING_DIR)
+    film_names   : list — all film names for this experiment
+                   (plain names without field suffix, OR full names with _F0 etc.)
+    out_relpath  : str  — path relative to working_dir for the output CSV
+
+    Returns
+    -------
+    pd.DataFrame  — the manifest that was written to disk
+    """
+    rows = []
+    missing = []
+
+    for fname in film_names:
+        paths = build_film_paths(working_dir, fname)
+
+        # Derive field label from film name
+        mo = _FIELD_RE.search(fname)
+        field = f"F{mo.group(1)}" if mo else None
+
+        if not os.path.isfile(paths.json_path):
+            missing.append(fname)
+            continue
+
+        try:
+            with open(paths.json_path, "r", encoding="utf-8") as f:
+                js = json.load(f)
+        except Exception as e:
+            print(f"[warn] Could not read JSON for {fname}: {e}")
+            continue
+
+        offsets_js = js.get("offsets", {})
+        intervals_js = js.get("cell_intervals", {})
+        # a_left is stored as the G0 of the global_interval
+        gi = js.get("global_interval", {})
+        a_left = int(gi.get("G0", 0)) if gi else 0
+
+        # Collect all cell IDs seen in offsets (complete population)
+        all_cids = set()
+        for cid_str in offsets_js:
+            try:
+                all_cids.add(int(cid_str))
+            except ValueError:
+                pass
+        # Also include any cells that only appear in cell_intervals
+        for cid_str in intervals_js:
+            try:
+                all_cids.add(int(cid_str))
+            except ValueError:
+                pass
+
+        for cid in sorted(all_cids):
+            cid_str = str(cid)
+            offset = int(offsets_js.get(cid_str, 0))
+            ci = intervals_js.get(cid_str, {})
+            has_septum = bool(ci.get("has_septum", False)) if isinstance(ci, dict) else False
+            rows.append({
+                "film_name": fname,
+                "cell_id": cid,
+                "offset": offset if has_septum else float("nan"),
+                "has": 1 if has_septum else 0,
+                "field": field,
+            })
+
+    if missing:
+        print(f"[warn] No JSON state found for {len(missing)} film(s): {missing[:5]}{'...' if len(missing) > 5 else ''}")
+
+    df = pd.DataFrame(rows, columns=["film_name", "cell_id", "has", "offset", "field"])
+    df["cell_id"] = pd.to_numeric(df["cell_id"], errors="coerce").astype("Int64")
+    df["has"] = df["has"].fillna(0).astype(int)
+    df["offset"] = pd.to_numeric(df["offset"], errors="coerce")
+
+    out_path = os.path.join(working_dir, out_relpath)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    df.to_csv(out_path, index=False)
+    print(f"[manifest] Written {len(df)} rows ({df['has'].sum()} with septum) → {out_path}")
+
+    return df
 

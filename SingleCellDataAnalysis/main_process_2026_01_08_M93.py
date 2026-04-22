@@ -14,12 +14,16 @@ import os
 import pandas as pd
 import numpy as np
 
-WORKING_DIR = "/Volumes/Movies/2026_01_08_M93/"
+WORKING_DIR = "/Volumes/X10 Pro/Movies/2026_01_08_M93/"
 FILM_NAMES = ["A14_FL_1",
               "A14_BF_1",
               "A14_FL_2",
               "A14_BF_2",
               "A14_FL_3"]
+FIELDS = ["F0", "F1", "F2"]
+
+# Flat list of every per-field film name — needed by export_manifest_from_json_states
+ALL_FILM_NAMES = [f"{base}_{field}" for base in FILM_NAMES for field in FIELDS]
 # Use BF images for manual alignment
 
 print("📥 Loading data...")
@@ -45,12 +49,18 @@ review_septum_alignment_board_gui(WORKING_DIR, FILM_NAME, mask_col="rle_bf", n_r
 #%%
 FILM_NAME = f"{FILM_NAMES[3]}_F2"
 review_septum_alignment_board_gui(WORKING_DIR, FILM_NAME, mask_col="rle_bf", n_rows=12, n_cols=25, tile_size=96)
+#%% Export manifest from GUI JSON states (bridges new GUI → downstream pipeline)
+# Run this after finishing all alignment board QC sessions above.
+from SingleCellDataAnalysis.septum_gui_utils import export_manifest_from_json_states
+
+export_manifest_from_json_states(
+    WORKING_DIR, ALL_FILM_NAMES, out_relpath="training_dataset/pipeline_manifest.csv"
+)
+
 #%% Pairing cell IDs between BF and GFP movies
 from SingleCellDataAnalysis.multi_field import run_field_sequence, make_field_sequence
 from SingleCellDataAnalysis.population_movie_gui import build_global_id_maps_from_pairings
 
-#%%
-FIELDS = ["F0", "F1", "F2"]
 all_res = {}
 all_global_maps = {}
 
@@ -63,6 +73,7 @@ for field in FIELDS:
         field_seq,
         out_dir,
         iou_min=0.01,
+        manifest_relpath="training_dataset/pipeline_manifest.csv",
         #bf_rle_col="rle_gfp",   # your BF mask column is mislabeled as rle_gfp
     )
     all_res[field] = res
