@@ -117,7 +117,7 @@ def quantify_all_cells_xcor(df_all, cell_ids, feature1='pol1_int_corr', feature2
 
     df_result = pd.DataFrame.from_records(records)
 
-    output_path = os.path.join(WORKING_DIR, filename)
+    output_path = filename
     df_result.to_csv(output_path, index=False)
     print(f"✔️ Cross-correlation results saved to: {output_path}")
 
@@ -132,14 +132,14 @@ def compute_mi_empirical(y_true, y_pred, n_bins=10):
     y_pred_binned = np.digitize(y_pred, bins=np.histogram_bin_edges(y_pred, bins=n_bins))
 
     return mutual_info_score(y_true_binned, y_pred_binned)
-from npeet.entropy_estimators import mi as mi_ksg
-import numpy as np
-
-def compute_mi_ksg(y_true, y_pred):
-    # Ensure shape (n_samples, 1)
-    x = y_true.reshape(-1, 1)
-    y = y_pred.reshape(-1, 1)
-    return mi_ksg(x, y)
+# from npeet.entropy_estimators import mi as mi_ksg
+# import numpy as np
+# 
+# def compute_mi_ksg(y_true, y_pred):
+#     # Ensure shape (n_samples, 1)
+#     x = y_true.reshape(-1, 1)
+#     y = y_pred.reshape(-1, 1)
+#     return mi_ksg(x, y)
 def compute_sse(y_true, y_pred):
     return 1/np.sum((y_true - y_pred) ** 2)
 
@@ -608,7 +608,7 @@ def quantify_all_cells_acor(df_all, cell_ids,
             continue
 
     df_result = pd.DataFrame.from_records(records)
-    output_path = os.path.join(WORKING_DIR, filename)
+    output_path = filename
     df_result.to_csv(output_path, index=False)
     print(f"✔️ Autocorrelation results saved to: {output_path}")
 

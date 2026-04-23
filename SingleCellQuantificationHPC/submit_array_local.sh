@@ -23,7 +23,7 @@ for file_name in "${TARGETS[@]}"; do
     --file_name "$file_name" \
     --output_base_dir "$EXP_ROOT" \
     --z_index 0 \
-    --min_area 2500
+    --min_area 2000
 
   cell_ids_path="$EXP_ROOT/$file_name/cell_ids.txt"
   if [ ! -f "$cell_ids_path" ]; then

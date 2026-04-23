@@ -499,7 +499,7 @@ def quantify_all_cells(df_all, cell_ids, feature1='pol1_int_corr', feature2='pol
 
     df_result = pd.DataFrame.from_records(records)
 
-    output_path = os.path.join(WORKING_DIR, filename)
+    output_path = filename
     df_result.to_csv(output_path, index=False)
     print(f"✔️ Results saved to: {output_path}")
 

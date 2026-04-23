@@ -2,8 +2,8 @@
 set -euo pipefail
 
 HPC_HOST="hsushen@172.20.97.21"
-SRC="/RAID1/working/R402/hsushen/FungalProject/Movies/2026_01_18_M97/"
-DST="/Volumes/X10 Pro/Movies/2026_01_18_M97/"
+SRC="/RAID1/working/R402/hsushen/FungalProject/Movies/2026_01_16_M96/"
+DST="/Volumes/X10 Pro/Movies/2026_01_16_M96/"
 
 # rsync include/exclude rules:
 # - include directories so rsync can walk the tree

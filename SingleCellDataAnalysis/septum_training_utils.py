@@ -392,22 +392,21 @@ def export_film_training_dataset(
 
     n_written = n_pos = n_neg = n_skipped = 0
 
+    # --- Pass 1: Compute average interval duration (D) ---
+    cell_data = []
+    D_list = []
+    new_offsets = offsets.copy()
+
     for k, cid in enumerate(all_cell_ids):
         cid = int(cid)
-        
-        # New-style multi-film state?
         key = (film_name, cid)
-        if key in offsets:
-            off = int(offsets[key])
-        else:
-            off = int(offsets.get(cid, 0))
+        off = int(offsets.get(key, offsets.get(cid, 0)))
 
         label_source = "none"
         start_a = None
         end_a = None
         current_cell_state = {}
 
-        # (1) per-cell label
         if key in cell_intervals:
             current_cell_state = cell_intervals[key]
             label_source = "cell"
@@ -424,33 +423,45 @@ def export_film_training_dataset(
                 e = current_cell_state.get("end_aligned", None)
                 start_a = None if s is None else int(round(float(s)))
                 end_a   = None if e is None else int(round(float(e)))
-                
                 if start_a is None and end_a is None and global_interval is not None:
-                    label_source = "none" # Fallback to global bootstrap
+                    label_source = "none"
 
-        # (2) global bootstrap
         if label_source == "none" and global_interval is not None:
             label_source = "global"
             G0, G1 = map(int, global_interval)
-
             tp_min, tp_max = masks.minmax(key)
-            if tp_min is None or tp_max is None:
-                n_skipped += 1
-                continue
+            if tp_min is not None and tp_max is not None:
+                a_min = int(tp_min) + off
+                a_max = int(tp_max) + off
+                if not ((a_max < G0) or (a_min > G1)):
+                    start_a = int(G0) if (a_min <= G0) else None
+                    end_a   = int(G1) if (a_max >= G1) else None
 
-            a_min = int(tp_min) + off
-            a_max = int(tp_max) + off
+        if start_a is not None and end_a is not None:
+            D_list.append(end_a - start_a)
 
-            if (a_max < G0) or (a_min > G1):
-                start_a = None
-                end_a = None
-            else:
-                start_a = int(G0) if (a_min <= G0) else None
-                end_a   = int(G1) if (a_max >= G1) else None
+        cell_data.append((cid, key, label_source, start_a, end_a, current_cell_state, off))
 
-        elif label_source == "none":
+    avg_D = sum(D_list) / len(D_list) if D_list else 0
+
+    # --- Pass 2: Apply alignment and export ---
+    for cid, key, label_source, start_a, end_a, current_cell_state, off in cell_data:
+        if label_source == "none":
             n_skipped += 1
             continue
+
+        if start_a is None and end_a is None:
+            new_off = off
+        elif start_a is not None and end_a is not None:
+            new_off = off - end_a - 1
+        elif start_a is not None and end_a is None:
+            new_off = off - int(round(start_a + avg_D)) - 1
+        elif start_a is None and end_a is not None:
+            new_off = off - end_a - 1
+            
+        start_a = start_a - off + new_off if start_a is not None else None
+        end_a = end_a - off + new_off if end_a is not None else None
+        new_offsets[key] = new_off
 
         # build/load strip
         strip, tp0 = ensure_strip_for_cell(
@@ -459,7 +470,7 @@ def export_film_training_dataset(
             frames_dir=frames_dir,
             cache_img_dir=cache_img_dir,
             masks=masks,
-            offsets=offsets,
+            offsets=new_offsets,
             time_col=time_col,
             mask_col=mask_col,
             pad=pad,
