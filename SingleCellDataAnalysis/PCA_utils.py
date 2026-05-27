@@ -2,8 +2,12 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+try:
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
+except ImportError:
+    PCA = None
+    StandardScaler = None
 
 def load_cell_data(csv_path, target_id=None):
     """

@@ -28,8 +28,16 @@ def create_cell_job_script(job_id, cell_id, working_dir, script_path,experiment_
 #SBATCH --cpus-per-task=4
 
 
-source ~/.bashrc
-conda activate cellpose_env
+if [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
+    source "$HOME/miniforge3/etc/profile.d/conda.sh"
+    conda activate cellpose-sam
+elif [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+    conda activate cellpose_env
+else
+    source ~/.bashrc
+    conda activate cellpose_env
+fi
 cd {working_dir}
 
 

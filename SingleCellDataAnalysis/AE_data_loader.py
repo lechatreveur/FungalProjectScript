@@ -3,7 +3,7 @@
 import os
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+# from sklearn.preprocessing import StandardScaler # Removed dependency
 
 def load_and_preprocess_trajectories(experiments_dict):
     """
@@ -12,7 +12,7 @@ def load_and_preprocess_trajectories(experiments_dict):
         X (np.ndarray): Tensor of shape (num_cells, 101, 2)
         global_ids (list): List of unique global cell IDs
         labels (list): List of experiment names for each cell
-        scaler (StandardScaler): The fitted scaler
+        scaler (object): A simple object with transform/fit_transform
     """
     df_list = []
     
@@ -68,14 +68,26 @@ def load_and_preprocess_trajectories(experiments_dict):
     X = np.array(trajectories) # (N, 101, 2)
     
     # 4. Global Scaling
-    # We fit a single StandardScaler on all values across time and channels to preserve relative amplitudes
     N, T, C = X.shape
     X_flat = X.reshape(-1, C) # (N*T, C)
     
-    scaler = StandardScaler()
-    X_flat_scaled = scaler.fit_transform(X_flat)
+    # Manual Scaler Implementation
+    mean = np.nanmean(X_flat, axis=0)
+    std = np.nanstd(X_flat, axis=0)
     
+    class ManualScaler:
+        def __init__(self, mean, std):
+            self.mean = mean
+            self.std = std
+        def transform(self, x):
+            return (x - self.mean) / (self.std + 1e-8)
+            
+    scaler = ManualScaler(mean, std)
+    X_flat_scaled = (X_flat - mean) / (std + 1e-8)
     X_scaled = X_flat_scaled.reshape(N, T, C)
+    
+    # Fill NaNs with 0
+    X_scaled = np.nan_to_num(X_scaled, nan=0.0)
     
     return X_scaled, global_ids, labels, scaler
 
@@ -83,7 +95,8 @@ if __name__ == "__main__":
     EXPERIMENTS = {
         "Sept17": "/Volumes/X10 Pro/Movies/2025_09_17/",
         "M92":    "/Volumes/X10 Pro/Movies/2025_12_31_M92/",
-        "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/"
+        "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/",
+        "June25_20m": "/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/"
     }
     
     X, gids, labels, scaler = load_and_preprocess_trajectories(EXPERIMENTS)

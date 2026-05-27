@@ -56,6 +56,7 @@ parser.add_argument('--file_name', type=str, required=True, help='File name of .
 parser.add_argument('--z_index', type=int, default=1, help="(Unused in 1-CH data; kept for compatibility)")
 parser.add_argument('--min_area', type=int, default=2500, help="Minimum area threshold for cell filtering (first frame).")
 parser.add_argument('--update_existing', action='store_true', help="Only update existing rows (skip tracking if masks CSV is valid).")
+parser.add_argument('--seed_from_csv', action='store_true', help="Use the existing masks.csv at t=0 as the seed mask instead of searching seg.tif.")
 
 parser.add_argument('--xcorr_select',
                     choices=['off', 'fallback', 'primary'],
@@ -98,9 +99,9 @@ xcorr_debug = args.xcorr_debug
 # =========================
 # Paths
 # =========================
-output_frames_folder        = f"{working_dir}{file_name}/Frames_{file_name}"
-output_masks_folder         = f"{working_dir}{file_name}/Masks_{file_name}"
-output_tracked_cells_folder = f"{working_dir}{file_name}/TrackedCells_{file_name}"
+output_frames_folder        = os.path.join(working_dir, file_name, f"Frames_{file_name}")
+output_masks_folder         = os.path.join(working_dir, file_name, f"Masks_{file_name}")
+output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}")
 
 # No subfolders under Masks_<file_name> anymore
 os.makedirs(output_masks_folder, exist_ok=True)
@@ -570,13 +571,23 @@ if __name__ == "__main__":
     if need_to_track:
         masks_csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 1) Seed from first available mask
-        first_mask, labeled_mask, filtered_regions = GetFilteredRegions(min_area, channel=track_channel)
-        cell = next((c for c in filtered_regions if c.label == cell_id), None)
-        if cell is None:
-            print(f"Cell {cell_id} not found in first frame masks.")
-            sys.exit(1)
-        initial_mask = (labeled_mask == cell_id)
+        # 1) Seed mask initialization
+        if args.seed_from_csv and is_valid_csv(masks_csv_path):
+            print(f"[track] Seeding from existing CSV at t=0: {masks_csv_path}")
+            df = pd.read_csv(masks_csv_path)
+            rle_col = 'rle_gfp' if track_channel == 'gfp' else 'rle_bf'
+            rle_str = df.iloc[0][rle_col]
+            H, W = int(df.iloc[0]['height']), int(df.iloc[0]['width'])
+            initial_mask = np.asarray(rle_decode(rle_str, (H, W)), bool) if isinstance(rle_str, str) and rle_str else np.zeros((H, W), bool)
+            if not initial_mask.any():
+                print(f"[error] Custom seed mask in CSV at t=0 is empty.")
+                sys.exit(1)
+        else:
+            first_mask, labeled_mask, filtered_regions = GetFilteredRegions(min_area, channel=track_channel)
+            if not (labeled_mask == cell_id).any():
+                print(f"Cell {cell_id} not found in first frame masks.")
+                sys.exit(1)
+            initial_mask = (labeled_mask == cell_id)
 
         # 2) Tracking in detected channel only
         xcfg_fwd = {

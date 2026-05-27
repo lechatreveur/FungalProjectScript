@@ -611,6 +611,10 @@ def save_state_and_labels(
                 "start_aligned": (None if v.get("start_aligned", None) is None else float(v["start_aligned"])),
                 "end_aligned": (None if v.get("end_aligned", None) is None else float(v["end_aligned"])),
                 "white_septum": bool(v.get("white_septum", False)),  # polarity flag
+                "has_septum_2": bool(v.get("has_septum_2", False)),
+                "start_aligned_2": (None if v.get("start_aligned_2", None) is None else float(v["start_aligned_2"])),
+                "end_aligned_2": (None if v.get("end_aligned_2", None) is None else float(v["end_aligned_2"])),
+                "white_septum_2": bool(v.get("white_septum_2", False)),
             }
             for cid, v in cell_intervals.items()
         }),

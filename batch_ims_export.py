@@ -132,6 +132,6 @@ def process_ims_file(ims_path):
 
 # ---------- Batch ----------
 if __name__ == "__main__":
-    ims_files = [f for f in os.listdir(working_dir) if f.endswith(".ims")]
+    ims_files = [f for f in os.listdir(working_dir) if f.endswith(".ims") and not f.startswith("._")]
     for f in ims_files:
         process_ims_file(os.path.join(working_dir, f))

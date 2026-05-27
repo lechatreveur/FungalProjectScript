@@ -16,7 +16,8 @@ from SingleCellDataAnalysis.AE_data_loader import load_and_preprocess_trajectori
 EXPERIMENTS = {
     "Sept17": "/Volumes/X10 Pro/Movies/2025_09_17/",
     "M92":    "/Volumes/X10 Pro/Movies/2025_12_31_M92/",
-    "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/"
+    "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/",
+    "June25_20m": "/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/"
 }
 OUTPUT_DIR = "/Users/user/Documents/Python_Scripts/FungalProjectScript/SingleCellDataAnalysis/combined_analysis_outputs/autoencoder/"
 LATENT_CSV = os.path.join(OUTPUT_DIR, "ae_latent_features.csv")
@@ -36,7 +37,7 @@ X_orig = inverse_scale(X_np)
 
 print("📥 Loading UMAP coordinates from latent space...")
 df_latent = pd.read_csv(LATENT_CSV, index_col=0)
-z_cols = [f"Latent_{i+1}" for i in range(8)]
+z_cols = [f"Latent_{i+1}" for i in range(3)]
 z_np = df_latent.loc[global_ids][z_cols].values
 
 import umap

@@ -41,7 +41,8 @@ def is_ims_completed(file_name, working_dir, time_points, require_movie=True):
     
     for t in range(time_points):
         seg_path = os.path.join(output_masks_folder, f"{file_name}_t_{t:03d}_c_0_seg.tif")
-
+        if not os.path.exists(seg_path):
+            return False
 
     if require_movie:
         movie_path = os.path.join(
@@ -57,7 +58,7 @@ def FindMovieMaxMin(file_name, channel, frame_dir):
     if channel != 0:
         raise ValueError("This simplified script only supports channel=0")
 
-    frame_pattern = f"{file_name}_t_??_c_{channel}.tif"
+    frame_pattern = f"{file_name}_t_???_c_{channel}.tif"
     movie_name = f"{file_name}_c_{channel:01d}.mp4"
 
     frame_files = sorted(
@@ -144,25 +145,32 @@ def process_ims_file(ims_path, working_dir):
             frame_path = os.path.join(output_frames_folder, f"{file_name}_t_{t:03d}_c_0.tif")
             seg_path = os.path.join(output_masks_folder, f"{file_name}_t_{t:03d}_c_0_seg.tif")
 
-            if not os.path.exists(frame_path) or not os.path.exists(seg_path):
+            if os.path.exists(seg_path):
+                pbar.update(1)
+                continue
+
+            # Load or extract image
+            if os.path.exists(frame_path):
+                img = imread(frame_path)
+            else:
                 img = data[t, 0, 0, :, :]  # single channel, single z
                 os.makedirs(os.path.dirname(frame_path), exist_ok=True)
                 imwrite(frame_path, img)
 
-                out = model.eval(
-                    img,
-                    channels=channels_for_segmentation,  # [0,0] for single-channel images
-                    channel_axis=None,                   # img is (Y,X)
-                    diameter=diameter,                   # or set None if you want less assumption
-                )
-                masks = out[0]
+            # Segment
+            out = model.eval(
+                img,
+                channels=channels_for_segmentation,
+                channel_axis=None,
+                diameter=diameter,
+            )
+            masks = out[0]
 
-                os.makedirs(os.path.dirname(seg_path), exist_ok=True)
-                imwrite(seg_path, masks)
+            os.makedirs(os.path.dirname(seg_path), exist_ok=True)
+            imwrite(seg_path, masks)
 
-                del img, masks
-                gc.collect()
-
+            del img, masks
+            gc.collect()
             pbar.update(1)
 
     del data
@@ -192,7 +200,7 @@ if __name__ == "__main__":
     if not os.path.isdir(working_dir):
         raise SystemExit(f"ERROR: working_dir does not exist or is not a directory: {working_dir}")
 
-    ims_files = [f for f in os.listdir(working_dir) if f.endswith(".ims")]
+    ims_files = [f for f in os.listdir(working_dir) if f.endswith(".ims") and not f.startswith("._")]
     if not ims_files:
         raise SystemExit(f"ERROR: No .ims files found in: {working_dir}")
 

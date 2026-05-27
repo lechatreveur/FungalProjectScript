@@ -58,7 +58,6 @@ def warp_image(img: np.ndarray, warp: np.ndarray, size_wh, interp, border_mode, 
     )
 
 def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float):
-    # Identify Frames_* and Masks_* subfolders
     frames_dirs = [p for p in film_dir.iterdir() if p.is_dir() and p.name.startswith("Frames_")]
     masks_dirs  = [p for p in film_dir.iterdir() if p.is_dir() and p.name.startswith("Masks_")]
 
@@ -66,13 +65,11 @@ def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float):
         return 0  # nothing to do
     if len(frames_dirs) != 1:
         raise RuntimeError(f"Expected exactly 1 Frames_* dir in {film_dir}, found: {[p.name for p in frames_dirs]}")
-    if len(masks_dirs) != 1:
-        raise RuntimeError(f"Expected exactly 1 Masks_* dir in {film_dir}, found: {[p.name for p in masks_dirs]}")
-
+    
     frames_dir = frames_dirs[0]
-    masks_dir  = masks_dirs[0]
+    masks_dir  = masks_dirs[0] if masks_dirs else None
 
-    frame_files = sorted(frames_dir.glob("*.tif"), key=t_index)
+    frame_files = sorted([p for p in frames_dir.glob("*.tif") if not p.name.startswith("._")], key=t_index)
     if not frame_files:
         return 0
 
@@ -99,37 +96,40 @@ def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float):
             border_mode=cv2.BORDER_REFLECT
         )
 
-        # Corresponding mask
-        mask_name = fpath.stem + "_seg.tif"
-        mpath = masks_dir / mask_name
-        if not mpath.exists():
-            raise RuntimeError(f"Missing mask for {fpath.name}: expected {mpath.name} in {masks_dir}")
-
-        mask = read_tiff_any(mpath)
-
-        # Warp mask with nearest neighbor, pad with 0
-        stabilized_mask = warp_image(
-            mask, warp, (w, h),
-            interp=cv2.INTER_NEAREST,
-            border_mode=cv2.BORDER_CONSTANT,
-            border_value=0
-        )
+        # Corresponding mask (Optional)
+        mpath = None
+        stabilized_mask = None
+        if masks_dir:
+            mask_name = fpath.stem + "_seg.tif"
+            mpath = masks_dir / mask_name
+            if mpath.exists():
+                mask = read_tiff_any(mpath)
+                # Warp mask with nearest neighbor, pad with 0
+                stabilized_mask = warp_image(
+                    mask, warp, (w, h),
+                    interp=cv2.INTER_NEAREST,
+                    border_mode=cv2.BORDER_CONSTANT,
+                    border_value=0
+                )
 
         if dry_run:
-            print(f"[DRY RUN] Would overwrite:\n  {fpath}\n  {mpath}")
+            print(f"[DRY RUN] Would overwrite: {fpath}")
+            if mpath and mpath.exists():
+                print(f"[DRY RUN] Would overwrite: {mpath}")
             continue
 
         # Write to temp then replace originals
-        tmp_frame = fpath.with_name(fpath.stem + ".tmp" + fpath.suffix)   # ...tmp.tif
-        tmp_mask  = mpath.with_name(mpath.stem + ".tmp" + mpath.suffix)   # ...tmp.tif
-
+        tmp_frame = fpath.with_name(fpath.stem + ".tmp" + fpath.suffix)
         if not cv2.imwrite(str(tmp_frame), stabilized_frame):
             raise RuntimeError(f"Failed writing {tmp_frame}")
-        if not cv2.imwrite(str(tmp_mask), stabilized_mask):
-            raise RuntimeError(f"Failed writing {tmp_mask}")
-
         safe_replace(tmp_frame, fpath)
-        safe_replace(tmp_mask, mpath)
+
+        if stabilized_mask is not None:
+            tmp_mask  = mpath.with_name(mpath.stem + ".tmp" + mpath.suffix)
+            if not cv2.imwrite(str(tmp_mask), stabilized_mask):
+                raise RuntimeError(f"Failed writing {tmp_mask}")
+            safe_replace(tmp_mask, mpath)
+        
         changed += 1
 
     return changed

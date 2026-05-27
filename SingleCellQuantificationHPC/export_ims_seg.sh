@@ -2,7 +2,7 @@
 #SBATCH --job-name=ims_seg
 #SBATCH --output=/home/hsushen/FungalProjectScript/SingleCellQuantificationHPC/logs/seg_%A_%a.out
 #SBATCH --error=/home/hsushen/FungalProjectScript/SingleCellQuantificationHPC/logs/seg_%A_%a.err
-#SBATCH --array=0-3
+#SBATCH --array=0-2
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=40G
 #SBATCH --time=72:00:00
@@ -23,10 +23,9 @@ conda activate cellpose_env
 
 # define the working directories
 WORKDIRS=(
-  "/RAID1/working/R402/hsushen/FungalProject/Movies/2025_12_31_M92"
-  "/RAID1/working/R402/hsushen/FungalProject/Movies/2026_01_08_M93"
-  "/RAID1/working/R402/hsushen/FungalProject/Movies/2026_01_16_M96"
-  "/RAID1/working/R402/hsushen/FungalProject/Movies/2026_01_18_M97"
+  "/RAID1/working/R402/hsushen/FungalProject/Movies/2026_04_23_M130"
+  "/RAID1/working/R402/hsushen/FungalProject/Movies/2026_04_29_M133"
+  "/RAID1/working/R402/hsushen/FungalProject/Movies/2026_04_30_M135"
 )
 
 # guard

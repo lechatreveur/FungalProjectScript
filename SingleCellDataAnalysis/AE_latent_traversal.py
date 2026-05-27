@@ -18,12 +18,13 @@ from SingleCellDataAnalysis.AE_model import TrajectoryAutoencoder
 EXPERIMENTS = {
     "Sept17": "/Volumes/X10 Pro/Movies/2025_09_17/",
     "M92":    "/Volumes/X10 Pro/Movies/2025_12_31_M92/",
-    "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/"
+    "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/",
+    "June25_20m": "/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/"
 }
 OUTPUT_DIR = "/Users/user/Documents/Python_Scripts/FungalProjectScript/SingleCellDataAnalysis/combined_analysis_outputs/autoencoder/"
 MODEL_PATH = os.path.join(OUTPUT_DIR, "ae_model.pth")
 LATENT_CSV = os.path.join(OUTPUT_DIR, "ae_latent_features.csv")
-LATENT_DIM = 8
+LATENT_DIM = 3
 
 # ==== 2. Initialization ====
 print("📥 Loading scaler and dataset (required for inverse transform)...")
@@ -52,7 +53,7 @@ num_steps = 5
 multipliers = np.linspace(-2, 2, num_steps)
 colors = plt.cm.coolwarm(np.linspace(0, 1, num_steps))
 
-fig, axes = plt.subplots(2, 4, figsize=(20, 10), sharex=True, sharey=True)
+fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True, sharey=True)
 axes = axes.flatten()
 
 # We need a helper to inverse transform a batch of trajectories
@@ -87,9 +88,8 @@ with torch.no_grad():
             ax.plot(x_recon_inv[:, 1], color=colors[step_idx], linestyle='--', linewidth=1.5, alpha=0.6)
             
         ax.set_title(f"Dimension {dim+1} Traversal\n(-2σ to +2σ)")
-        if dim >= 4:
-            ax.set_xlabel("Time Point")
-        if dim % 4 == 0:
+        ax.set_xlabel("Time Point")
+        if dim % 3 == 0:
             ax.set_ylabel("Intensity")
 
 # Custom Legend

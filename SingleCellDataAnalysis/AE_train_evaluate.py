@@ -23,7 +23,8 @@ from SingleCellDataAnalysis.AE_model import TrajectoryAutoencoder
 EXPERIMENTS = {
     "Sept17": "/Volumes/X10 Pro/Movies/2025_09_17/",
     "M92":    "/Volumes/X10 Pro/Movies/2025_12_31_M92/",
-    "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/"
+    "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/",
+    "June25_20m": "/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/"
 }
 OUTPUT_DIR = "/Users/user/Documents/Python_Scripts/FungalProjectScript/SingleCellDataAnalysis/combined_analysis_outputs/autoencoder/"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -31,7 +32,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 EPOCHS = 500
 BATCH_SIZE = 32
 LR = 1e-3
-LATENT_DIM = 8
+LATENT_DIM = 3
 
 # ==== 2. Load Data ====
 print("📥 Loading and preprocessing trajectories...")

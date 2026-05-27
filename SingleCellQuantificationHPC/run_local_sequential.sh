@@ -15,15 +15,12 @@ export OPENBLAS_NUM_THREADS=8
 # ---- 4) Activate conda env (Miniforge) ----
 source "$HOME/miniforge3/etc/profile.d/conda.sh"
 conda activate cellpose-sam
-# Alternatively (most robust):
-# conda activate "/Users/user/miniforge3/envs/cellpose-sam"
 
-# ---- 5) Working directories ----
+# ---- 5) Working directories on the SSD ----
 WORKDIRS=(
-  "/Volumes/Movies/2025_12_31_M92"
-  "/Volumes/Movies/2026_01_08_M93"
-  "/Volumes/Movies/2026_01_16_M96"
-  "/Volumes/Movies/2026_01_18_M97"
+  "/Volumes/X10 Pro/Movies/2026_04_23_M130"
+  "/Volumes/X10 Pro/Movies/2026_04_29_M133"
+  "/Volumes/X10 Pro/Movies/2026_04_30_M135"
 )
 
 # ---- 6) Debug: confirm python + cellpose version ----
@@ -40,9 +37,9 @@ for WD in "${WORKDIRS[@]}"; do
   echo "============================================================"
   echo "[$(date)] Starting: $WD"
   echo "Logging to: logs/seg_${tag}.out and logs/seg_${tag}.err"
-  echo "Threads: OMP=$OMP_NUM_THREADS MKL=$MKL_NUM_THREADS OPENBLAS=$OPENBLAS_NUM_THREADS"
   echo "============================================================"
 
+  # Run the 1-channel segmentation script locally
   python batch_segment_ims_1CH.py "$WD" > "logs/seg_${tag}.out" 2> "logs/seg_${tag}.err"
 
   echo "[$(date)] Finished: $WD"
