@@ -514,6 +514,7 @@ HTML_TEMPLATE = """
                 <div class="btn-group" id="quantifyHpcGroup" style="margin-top: 16px; width: 100%; display: none;">
                     <button id="btnQuantifyHpc" style="width: 100%; background-color: var(--accent-secondary); color: white;">💻 Quantify Locally (Seed from CSV)</button>
                 </div>
+                <button id="btnExitLocalEdit" style="margin-top: 12px; width: 100%; display: none; background-color: #4b5563; color: white;">🔙 Return to Linkage</button>
             </div>
 
             <div class="panel-section" id="suspiciousSection" style="display:none;">
@@ -611,6 +612,20 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
+            <div class="panel-section">
+                <div class="panel-section-title">Bulk Auto-Fix from Raw Segments</div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <input type="number" id="autofixStartInput" placeholder="Start T" style="width: 80px;" class="custom-input">
+                    <span style="color: var(--text-muted);">to</span>
+                    <input type="number" id="autofixEndInput" placeholder="End T" style="width: 80px;" class="custom-input">
+                </div>
+                <div class="btn-group" style="width: 100%;">
+                    <button class="btn btn-secondary" id="setAutofixStartBtn" title="Set start to current frame" style="flex: 1; padding: 4px;">Set Start</button>
+                    <button class="btn btn-secondary" id="setAutofixEndBtn" title="Set end to current frame" style="flex: 1; padding: 4px;">Set End</button>
+                    <button class="btn btn-primary" id="runAutofixBtn" style="flex: 2; padding: 4px;" title="Auto-fix masks in range based on highest IoU with raw segments">Run Auto-Fix</button>
+                </div>
+            </div>
+
             <div class="panel-section" style="margin-top: auto;">
                 <div class="btn-group" style="width: 100%; flex-direction: column; gap: 10px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
@@ -644,6 +659,10 @@ HTML_TEMPLATE = """
             cells: [],
             selectedExp: '',
             selectedSequence: '',
+            isLocalEdit: false,
+            prevGlobalCell: null,
+            prevLinkEditFilmIdx: null,
+            prevLinkEditFilmName: null,
             isEditingLink: false,
             linkEditFilmIdx: -1,
             linkEditFilmName: '',
@@ -819,6 +838,9 @@ HTML_TEMPLATE = """
         }
 
         function getActiveFilmAndLocalCell() {
+            if (state.isLocalEdit) {
+                return { film: state.localFilmId, cellId: state.selectedCell, filmIdx: 0 };
+            }
             let fIdx = 0;
             if (state.filmBoundaries && state.filmBoundaries.length > 0) {
                 for (let i = 0; i < state.filmBoundaries.length; i++) {
@@ -840,6 +862,10 @@ HTML_TEMPLATE = """
             cancelAutosave();
             state.selectedCell = cellId;
             state.isEditingLink = false;
+            state.isLocalEdit = false;
+            document.getElementById('trackNewCellBtn').style.display = 'none';
+            const exitBtn = document.getElementById('btnExitLocalEdit');
+            if (exitBtn) exitBtn.style.display = 'none';
             document.getElementById('modeLabel').style.color = 'var(--accent-primary)';
             if (state.tool === 'select') document.getElementById('modeLabel').innerText = 'Click-Select';
             
@@ -906,6 +932,9 @@ HTML_TEMPLATE = """
         function renderFilmBoundaries() {
             const container = document.getElementById('filmBoundaries');
             container.innerHTML = '';
+            if (state.isLocalEdit || !state.filmBoundaries || state.filmBoundaries.length === 0 || !state.linkageDetails) {
+                return;
+            }
             if (state.numFrames <= 1) return;
             
             const films = state.linkageDetails.films;
@@ -943,6 +972,7 @@ HTML_TEMPLATE = """
             
             document.getElementById('modeLabel').innerText = `Pick Link Cell for ${filmName}`;
             document.getElementById('modeLabel').style.color = '#f59e0b';
+            document.getElementById('trackNewCellBtn').style.display = 'block';
             
             displayFrame();
         }
@@ -1013,7 +1043,9 @@ HTML_TEMPLATE = """
 
             
             // Update local film label
-            if (state.filmBoundaries.length > 0) {
+            if (state.isLocalEdit) {
+                document.getElementById('localFilmLabel').innerText = `${state.localFilmId} (Local Edit)`;
+            } else if (state.filmBoundaries.length > 0) {
                 let fIdx = 0;
                 for (let i = 0; i < state.filmBoundaries.length; i++) {
                     if (state.currentFrame >= state.filmBoundaries[i]) {
@@ -1025,7 +1057,7 @@ HTML_TEMPLATE = """
                 document.getElementById('localFilmLabel').innerText = `${films[fIdx]} (Cell ${local_ids[fIdx]})`;
             }
             
-            const modeParam = `sequence=${state.selectedSequence}`;
+            const modeParam = state.isLocalEdit ? `film=${state.localFilmId}` : `sequence=${state.selectedSequence}`;
             
             const loadImage = (src) => new Promise((resolve) => {
                 const img = new Image();
@@ -1193,7 +1225,7 @@ HTML_TEMPLATE = """
             };
             
             document.getElementById('trackNewCellBtn').onclick = async () => {
-                const targetFilm = state.localFilmId;
+                const targetFilm = state.isEditingLink ? state.linkEditFilmName : state.localFilmId;
                 if (!targetFilm) return alert("Select a film first.");
                 
                 try {
@@ -1207,17 +1239,14 @@ HTML_TEMPLATE = """
                     });
                     const data = await res.json();
                     if (data.status === 'success') {
-                        await loadCells(state.selectedExp, state.selectedSequence);
-                        const newBtn = document.getElementById(`cell-item-${data.cell_id}`);
-                        if (newBtn) {
-                            newBtn.click();
-                        }
+                        state.prevGlobalCell = state.selectedCell;
+                        state.prevLinkEditFilmIdx = state.linkEditFilmIdx;
+                        state.prevLinkEditFilmName = state.linkEditFilmName;
+                        state.isEditingLink = false;
                         
-                        state.currentFrame = 0;
-                        document.getElementById('timeSlider').value = 0;
-                        displayFrame();
+                        await selectLocalCell(data.cell_id, targetFilm);
                         
-                        alert(`Created custom cell #${data.cell_id}. Please use the Brush Draw tool to paint the seed mask on Frame 0, click Save Changes, then click Quantify Locally (Seed from CSV).`);
+                        alert(`Created custom local cell #${data.cell_id} in ${targetFilm}.\n\nInstructions:\n1. Paint the seed mask on Frame 0 using the Brush tool.\n2. Click "Save Changes" (or wait for autosave).\n3. Click "💻 Quantify Locally (Seed from CSV)" to track the cell.\n4. Once finished, click "🔙 Return to Linkage" to link it!`);
                     } else {
                         alert(data.message);
                     }
@@ -1229,12 +1258,18 @@ HTML_TEMPLATE = """
             document.getElementById('btnQuantifyHpc').onclick = async () => {
                 if (!state.selectedCell) return alert("Select a cell first.");
                 
-                const activeInfo = getActiveFilmAndLocalCell();
-                if (!activeInfo || !activeInfo.film || activeInfo.cellId === null || activeInfo.cellId === -1) {
-                    return alert("The selected cell is not tracked or mapped in the currently viewed film.");
+                let targetFilm, targetCellId;
+                if (state.isLocalEdit) {
+                    targetFilm = state.localFilmId;
+                    targetCellId = state.selectedCell;
+                } else {
+                    const activeInfo = getActiveFilmAndLocalCell();
+                    if (!activeInfo || !activeInfo.film || activeInfo.cellId === null || activeInfo.cellId === -1) {
+                        return alert("The selected cell is not tracked or mapped in the currently viewed film.");
+                    }
+                    targetFilm = activeInfo.film;
+                    targetCellId = activeInfo.cellId;
                 }
-                const targetFilm = activeInfo.film;
-                const targetCellId = activeInfo.cellId;
                 
                 document.getElementById('btnQuantifyHpc').innerText = '⏳ Quantifying...';
                 document.getElementById('btnQuantifyHpc').disabled = true;
@@ -1254,9 +1289,15 @@ HTML_TEMPLATE = """
                     const data = await res.json();
                     alert(data.message);
                     if (data.status === 'success') {
-                        await loadCells(state.selectedExp, state.selectedSequence);
-                        const curBtn = document.getElementById(`cell-item-${state.selectedCell}`);
-                        if (curBtn) curBtn.click();
+                        if (state.isLocalEdit) {
+                            const masksRes = await fetch(`/api/cell_masks?experiment=${state.selectedExp}&film=${targetFilm}&cell_id=${targetCellId}`);
+                            const masksData = await masksRes.json();
+                            state.cellMasks = masksData.masks;
+                        } else {
+                            await loadCells(state.selectedExp, state.selectedSequence);
+                            const curBtn = document.getElementById(`cell-item-${state.selectedCell}`);
+                            if (curBtn) curBtn.click();
+                        }
                         displayFrame();
                     }
                 } catch (e) {
@@ -1265,6 +1306,10 @@ HTML_TEMPLATE = """
                     document.getElementById('btnQuantifyHpc').innerText = '💻 Quantify Locally (Seed from CSV)';
                     document.getElementById('btnQuantifyHpc').disabled = false;
                 }
+            };
+
+            document.getElementById('btnExitLocalEdit').onclick = async () => {
+                await exitLocalCellEdit();
             };
 
             document.getElementById('chanBfBtn').onclick = () => { state.channel = 'bf'; updateChannelButtons(); displayFrame(); renderGallery(); };
@@ -1281,6 +1326,7 @@ HTML_TEMPLATE = """
                 // Cancel link edit mode if they switch tools to draw
                 if (state.isEditingLink) {
                     state.isEditingLink = false;
+                    document.getElementById('trackNewCellBtn').style.display = 'none';
                     document.getElementById('modeLabel').innerText = t === 'select' ? 'Click-Select' : (t === 'brush' ? 'Brush Draw' : 'Eraser');
                     document.getElementById('modeLabel').style.color = 'var(--accent-primary)';
                 } else {
@@ -1391,6 +1437,14 @@ HTML_TEMPLATE = """
                 document.getElementById('galleryClickStartBtn2').classList.remove('active');
                 document.getElementById('galleryClickEndBtn2').classList.add('active');
             };
+
+            document.getElementById('setAutofixStartBtn').onclick = () => {
+                document.getElementById('autofixStartInput').value = state.currentFrame;
+            };
+            document.getElementById('setAutofixEndBtn').onclick = () => {
+                document.getElementById('autofixEndInput').value = state.currentFrame;
+            };
+            document.getElementById('runAutofixBtn').onclick = () => runAutofix();
 
             window.addEventListener('keydown', (e) => {
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -1527,6 +1581,86 @@ HTML_TEMPLATE = """
             }
         }
 
+        async function selectLocalCell(cellId, filmId) {
+            cancelAutosave();
+            state.selectedCell = cellId;
+            state.localFilmId = filmId;
+            state.isLocalEdit = true;
+            state.isEditingLink = false; // Disable link editing mode temporarily to allow brush drawing
+            
+            // Set UI headers
+            document.getElementById('modeLabel').innerText = `Editing Local Cell #${cellId} in ${filmId}`;
+            document.getElementById('modeLabel').style.color = '#10b981';
+            
+            // Fetch local cell masks
+            const res = await fetch(`/api/cell_masks?experiment=${state.selectedExp}&film=${filmId}&cell_id=${cellId}`);
+            const data = await res.json();
+            
+            state.cellMasks = data.masks;
+            state.numFrames = data.num_frames;
+            state.imgWidth = data.width;
+            state.imgHeight = data.height;
+            state.channel = data.track_channel;
+            state.filmBoundaries = []; // No boundaries within a single film
+            renderFilmBoundaries(); // Clear timeline boundaries
+            
+            document.getElementById('cellChannelLabel').innerText = data.track_channel.toUpperCase();
+            document.getElementById('cellIdLabel').innerText = `Local #${cellId}`;
+            
+            const slider = document.getElementById('timeSlider');
+            slider.max = state.numFrames - 1;
+            slider.value = 0;
+            state.currentFrame = 0;
+            document.getElementById('maxTimeLabel').innerText = `t=${state.numFrames - 1}`;
+            
+            // Hide global-only sections and show local-only sections
+            document.getElementById('linkageSection').style.display = 'none';
+            document.getElementById('localFilmRow').style.display = 'flex';
+            document.getElementById('localFilmLabel').innerText = `${filmId} (Local Edit)`;
+            
+            // Show quantify locally button
+            document.getElementById('quantifyHpcGroup').style.display = 'flex';
+            document.getElementById('trackNewCellBtn').style.display = 'none';
+            
+            const exitBtn = document.getElementById('btnExitLocalEdit');
+            if (exitBtn) exitBtn.style.display = 'block';
+            
+            updateChannelButtons();
+            resetView();
+            await displayFrame();
+            updateQCUI();
+            renderGallery();
+            await loadSeptumLabels(cellId);
+        }
+
+        async function exitLocalCellEdit() {
+            cancelAutosave();
+            state.isLocalEdit = false;
+            
+            // Restore UI sections
+            document.getElementById('linkageSection').style.display = 'block';
+            
+            const exitBtn = document.getElementById('btnExitLocalEdit');
+            if (exitBtn) exitBtn.style.display = 'none';
+            
+            // Hide quantify locally button
+            document.getElementById('quantifyHpcGroup').style.display = 'none';
+            
+            // Re-select the global cell
+            if (state.prevGlobalCell) {
+                const globalCellId = state.prevGlobalCell;
+                state.prevGlobalCell = null;
+                await selectCell(globalCellId);
+                // Also trigger edit linkage modal for the film again so they can link it
+                if (state.prevLinkEditFilmIdx !== null && state.prevLinkEditFilmIdx !== undefined && state.prevLinkEditFilmName) {
+                    openLinkageModal(state.prevLinkEditFilmIdx, state.prevLinkEditFilmName);
+                }
+            } else {
+                // Fallback
+                await loadCells(state.selectedExp, state.selectedSequence);
+            }
+        }
+
         function undoStroke() {
             if (state.drawingHistory.length > 0) {
                 state.cellMasks[state.currentFrame] = state.drawingHistory.pop();
@@ -1547,8 +1681,23 @@ HTML_TEMPLATE = """
             document.getElementById('septumAiChart').style.display = 'none'; // reset prediction chart
             
             try {
-                // Scan all films for this cell to collect the full label
-                if (state.filmBoundaries && state.filmBoundaries.length > 0 && state.linkageDetails) {
+                if (state.isLocalEdit) {
+                    const res = await fetch(`/api/get_septum_label?experiment=${state.selectedExp}&film=${current.film}&cell_id=${current.cellId}`);
+                    const d = await res.json();
+                    if (d.status === 'success') {
+                        document.getElementById('hasSeptumCheckbox').checked = d.has_septum;
+                        document.getElementById('septumStartInput').value = (d.local_start !== null && d.local_start !== -1) ? d.local_start : '';
+                        document.getElementById('septumEndInput').value   = (d.local_end   !== null && d.local_end   !== -1) ? d.local_end   : '';
+                        document.getElementById('whiteSeptumCheckbox').checked = d.white_septum;
+                        document.getElementById('divisionIntervalContainer').style.display = d.has_septum ? 'flex' : 'none';
+
+                        document.getElementById('hasSeptumCheckbox2').checked = d.has_septum_2;
+                        document.getElementById('septumStartInput2').value = (d.local_start_2 !== null && d.local_start_2 !== -1) ? d.local_start_2 : '';
+                        document.getElementById('septumEndInput2').value   = (d.local_end_2   !== null && d.local_end_2   !== -1) ? d.local_end_2   : '';
+                        document.getElementById('whiteSeptumCheckbox2').checked = d.white_septum_2;
+                        document.getElementById('divisionIntervalContainer2').style.display = d.has_septum_2 ? 'flex' : 'none';
+                    }
+                } else if (state.filmBoundaries && state.filmBoundaries.length > 0 && state.linkageDetails) {
                     const boundaries = state.filmBoundaries;
                     const films      = state.linkageDetails.films;
                     const localIds   = state.linkageDetails.local_ids;
@@ -1642,7 +1791,50 @@ HTML_TEMPLATE = """
             
             // We may have cross-film start/end.
             // Dispatch one save call per film, keeping only the point(s) that belong to it.
-            if (state.filmBoundaries && state.filmBoundaries.length > 0 && state.linkageDetails) {
+            if (state.isLocalEdit) {
+                const body = {
+                    experiment: state.selectedExp,
+                    film: current.film,
+                    cell_id: current.cellId,
+                    has_septum: has_septum,
+                    local_start: globalStart,
+                    local_end:   globalEnd,
+                    white_septum,
+                    has_septum_2: has_septum_2,
+                    local_start_2: globalStart2,
+                    local_end_2:   globalEnd2,
+                    white_septum_2
+                };
+                
+                document.getElementById('autosaveStatus').innerText = 'Saving...';
+                document.getElementById('autosaveStatus').style.background = '#0f5132';
+                
+                try {
+                    const res = await fetch('/api/save_septum_label', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(body)
+                    });
+                    const d = await res.json();
+                    if (d.status === 'success') {
+                        document.getElementById('autosaveStatus').innerText = 'Saved';
+                        document.getElementById('autosaveStatus').style.background = '#0f5132';
+                        renderGallery();
+                        setTimeout(() => {
+                            if (document.getElementById('autosaveStatus').innerText === 'Saved') {
+                                document.getElementById('autosaveStatus').innerText = 'Idle';
+                                document.getElementById('autosaveStatus').style.background = '#1e293b';
+                            }
+                        }, 1000);
+                    } else {
+                        document.getElementById('autosaveStatus').innerText = 'Error';
+                        document.getElementById('autosaveStatus').style.background = '#ef4444';
+                    }
+                } catch(e) {
+                    document.getElementById('autosaveStatus').innerText = 'Error';
+                    document.getElementById('autosaveStatus').style.background = '#ef4444';
+                }
+            } else if (state.filmBoundaries && state.filmBoundaries.length > 0 && state.linkageDetails) {
                 
                 const boundaries = state.filmBoundaries;  // global offset of each film
                 const films      = state.linkageDetails.films;
@@ -1979,6 +2171,60 @@ HTML_TEMPLATE = """
             }
         }
 
+        async function runAutofix() {
+            const start = document.getElementById('autofixStartInput').value;
+            const end = document.getElementById('autofixEndInput').value;
+            if (start === '' || end === '') {
+                alert("Please set both start and end frames.");
+                return;
+            }
+            const tStart = parseInt(start);
+            const tEnd = parseInt(end);
+            if (tStart > tEnd) {
+                alert("Start frame must be <= End frame.");
+                return;
+            }
+            if (!state.selectedCell) return;
+            
+            const body = {
+                experiment: state.selectedExp,
+                cell_id: state.selectedCell,
+                start_t: tStart,
+                end_t: tEnd
+            };
+            if (state.isLocalEdit) {
+                body.film = state.localFilmId;
+            } else {
+                body.sequence = state.selectedSequence;
+            }
+            
+            setAutosaveStatus('Auto-fixing...', '#f59e0b');
+            try {
+                const res = await fetch('/api/auto_fix_segments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    setAutosaveStatus(`✓ Fixed ${data.fixed_count} frames`, '#10b981');
+                    setTimeout(() => setAutosaveStatus('Idle', 'var(--text-muted)'), 3000);
+                    const modeParamMasks = state.isLocalEdit ? `film=${state.localFilmId}` : `sequence=${state.selectedSequence}`;
+                    const resMasks = await fetch(`/api/cell_masks?experiment=${state.selectedExp}&${modeParamMasks}&cell_id=${state.selectedCell}`);
+                    const masksData = await resMasks.json();
+                    state.cellMasks = masksData.masks;
+                    displayFrame();
+                    renderGallery();
+                } else {
+                    setAutosaveStatus('✗ Error', '#ef4444');
+                    alert('Error during auto-fix: ' + data.message);
+                }
+            } catch (e) {
+                setAutosaveStatus('✗ Error', '#ef4444');
+                alert('Error: ' + e);
+            }
+        }
+
         async function saveCorrectedMasks(silent = false) {
             if (!state.selectedCell) return;
             setAutosaveStatus('Saving…', '#94a3b8');
@@ -1986,9 +2232,13 @@ HTML_TEMPLATE = """
                 experiment: state.selectedExp,
                 cell_id: state.selectedCell,
                 channel: state.channel,
-                masks: state.cellMasks,
-                sequence: state.selectedSequence
+                masks: state.cellMasks
             };
+            if (state.isLocalEdit) {
+                body.film = state.localFilmId;
+            } else {
+                body.sequence = state.selectedSequence;
+            }
             const res = await fetch('/api/save_masks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1999,6 +2249,14 @@ HTML_TEMPLATE = """
             if (data.status === 'success') {
                 setAutosaveStatus('✓ Saved', '#10b981');
                 setTimeout(() => setAutosaveStatus('Idle', 'var(--text-muted)'), 3000);
+                
+                // Update the thumbnail for the current frame
+                const thumb = document.getElementById('gallery-thumb-' + state.currentFrame);
+                if (thumb) {
+                    const ts = Date.now();
+                    const modeParam = state.isLocalEdit ? `film=${state.localFilmId}` : `sequence=${state.selectedSequence}`;
+                    thumb.src = `/api/frame_crop?experiment=${state.selectedExp}&${modeParam}&cell_id=${state.selectedCell}&t=${state.currentFrame}&channel=${state.channel}&_ts=${ts}`;
+                }
             } else {
                 setAutosaveStatus('✗ Error', '#ef4444');
                 if (!silent) alert('❌ Error saving masks: ' + data.message);
@@ -2008,7 +2266,7 @@ HTML_TEMPLATE = """
         function renderGallery() {
             const container = document.getElementById('stripContainer');
             container.innerHTML = '';
-            const modeParam = `sequence=${state.selectedSequence}`;
+            const modeParam = state.isLocalEdit ? `film=${state.localFilmId}` : `sequence=${state.selectedSequence}`;
             
             const current = getActiveFilmAndLocalCell();
             const startVal = document.getElementById('septumStartInput').value;
@@ -2053,6 +2311,7 @@ HTML_TEMPLATE = """
                 }
                 
                 img.className = classes.join(' ');
+                img.id = 'gallery-thumb-' + t;
                 img.style.height = '80px';
                 img.style.width = '80px';
                 img.style.objectFit = 'contain';
@@ -2359,7 +2618,7 @@ def cell_masks():
             if csv_path.exists():
                 df = pd.read_csv(csv_path)
                 rle_col = 'rle_bf'
-                if 'rle_gfp' in df.columns and df['rle_gfp'].dropna().any():
+                if 'rle_gfp' in df.columns and any(isinstance(x, str) and x.strip() for x in df['rle_gfp'].dropna()):
                     track_channel = 'gfp'
                     rle_col = 'rle_gfp'
                     
@@ -2393,11 +2652,17 @@ def cell_masks():
         csv_path = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}" / f"cell_{cell_id}_masks.csv"
         df = pd.read_csv(csv_path)
         
-        track_channel = 'bf'
-        rle_col = 'rle_bf'
-        if 'rle_gfp' in df.columns and df['rle_gfp'].dropna().any():
+        # Determine tracking channel: default to "gfp" if it's a GFP film, else "bf"
+        track_channel = "gfp" if "FL" in film else "bf"
+        rle_col = 'rle_gfp' if track_channel == 'gfp' else 'rle_bf'
+        
+        # Override default if either channel has non-empty masks in df
+        if 'rle_gfp' in df.columns and any(isinstance(x, str) and x.strip() for x in df['rle_gfp'].dropna()):
             track_channel = 'gfp'
             rle_col = 'rle_gfp'
+        elif 'rle_bf' in df.columns and any(isinstance(x, str) and x.strip() for x in df['rle_bf'].dropna()):
+            track_channel = 'bf'
+            rle_col = 'rle_bf'
                 
         masks = df[rle_col].fillna("").tolist()
         return jsonify({
@@ -2558,33 +2823,30 @@ def create_new_cell():
                 
     new_id = max_id + 1
     
-    frames_dir = BASE_MOVIE_ROOT / exp / film / f"Frames_{film}"
-    tifs = list(frames_dir.glob("*.tif"))
-    if not tifs:
-        return jsonify({"status": "error", "message": "No frame images found to determine dimensions."})
+    L, W, H = get_film_frame_count_and_size(exp, film)
+    if L == 0:
+        return jsonify({"status": "error", "message": "No frame images or existing cell files found to determine dimensions."})
         
-    from skimage.io import imread
-    img = imread(str(tifs[0]))
-    H, W = img.shape
-    
-    row = {
-        "time_point": 0,
-        "width": W, "height": H,
-        "rle_bf": "",
-        "touches_border_bf": False,
-        "source_bf": "manual",
-        "overlap_score_bf": 1.0,
-        "smooth_score_bf": 0.0,
-        "area_bf": 0,
-        "rle_gfp": "",
-        "touches_border_gfp": False,
-        "source_gfp": "manual",
-        "overlap_score_gfp": 1.0,
-        "smooth_score_gfp": 0.0,
-        "area_gfp": 0
-    }
-    
-    df = pd.DataFrame([row])
+    rows = []
+    for t in range(L):
+        rows.append({
+            "time_point": t,
+            "width": W, "height": H,
+            "rle_bf": "",
+            "touches_border_bf": False,
+            "source_bf": "manual" if t == 0 else "",
+            "overlap_score_bf": 1.0,
+            "smooth_score_bf": 0.0,
+            "area_bf": 0,
+            "rle_gfp": "",
+            "touches_border_gfp": False,
+            "source_gfp": "manual" if t == 0 else "",
+            "overlap_score_gfp": 1.0,
+            "smooth_score_gfp": 0.0,
+            "area_gfp": 0
+        })
+        
+    df = pd.DataFrame(rows)
     out_csv = tracked_dir / f"cell_{new_id}_masks.csv"
     df.to_csv(out_csv, index=False)
     
@@ -3008,7 +3270,37 @@ def frame_boundaries():
         
     try:
         seg = load_segmentation(str(files[0]))
-        seg_lbl = label(seg) if seg.dtype == bool else seg
+        from skimage.measure import label
+        seg_lbl = (label(seg) if seg.dtype == bool else seg).copy()
+        
+        # Burn tracked local cells into seg_lbl so their outlines are visible for linking
+        tracked_dir = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}"
+        if tracked_dir.is_dir():
+            max_lbl = int(seg_lbl.max()) if seg_lbl.size > 0 else 0
+            next_lbl = max_lbl + 100
+            for cf in tracked_dir.iterdir():
+                if cf.name.startswith("."): continue
+                m = re.match(r"^cell_(\d+)_masks\.csv$", cf.name)
+                if m:
+                    try:
+                        df = pd.read_csv(cf)
+                        if local_t < len(df):
+                            H, W = seg_lbl.shape
+                            for rle_col in ['rle_bf', 'rle_gfp']:
+                                if rle_col in df.columns:
+                                    rle = df.iloc[local_t][rle_col]
+                                    if isinstance(rle, str) and rle.strip():
+                                        source_col = 'source_bf' if rle_col == 'rle_bf' else 'source_gfp'
+                                        is_manual = False
+                                        if source_col in df.columns:
+                                            is_manual = (df.iloc[local_t][source_col] == 'manual')
+                                        if is_manual:
+                                            mask = rle_decode(rle, (H, W))
+                                            seg_lbl[mask] = next_lbl
+                                            next_lbl += 1
+                                            break
+                    except Exception:
+                        pass
         from skimage.segmentation import find_boundaries
         from scipy.ndimage import binary_dilation
         
@@ -3168,15 +3460,22 @@ def save_masks():
                 if csv_path.exists():
                     df = pd.read_csv(csv_path)
                     rle_col = 'rle_bf' if channel == 'bf' else 'rle_gfp'
+                    source_col = 'source_bf' if channel == 'bf' else 'source_gfp'
+                    if source_col not in df.columns:
+                        df[source_col] = ""
                     
                     if len(df) > len(film_masks):
                         film_masks.extend([""] * (len(df) - len(film_masks)))
                     elif len(df) < len(film_masks):
                         film_masks = film_masks[:len(df)]
                         
-                    df[rle_col] = film_masks
-                    
                     for t in range(len(df)):
+                        old_rle = df.loc[t, rle_col] if pd.notna(df.loc[t, rle_col]) else ""
+                        new_rle = film_masks[t] if film_masks[t] is not None else ""
+                        if old_rle != new_rle:
+                            df.loc[t, rle_col] = new_rle
+                            df.loc[t, source_col] = "manual"
+                            
                         rle = film_masks[t]
                         H, W = int(df.iloc[t]['height']), int(df.iloc[t]['width'])
                         if isinstance(rle, str) and rle.strip():
@@ -3195,21 +3494,126 @@ def save_masks():
         csv_path = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}" / f"cell_{cell_id}_masks.csv"
         df = pd.read_csv(csv_path)
         rle_col = 'rle_bf' if channel == 'bf' else 'rle_gfp'
-        df[rle_col] = new_masks
+        source_col = 'source_bf' if channel == 'bf' else 'source_gfp'
+        if source_col not in df.columns:
+            df[source_col] = ""
         
         for t in range(len(df)):
-            rle = new_masks[t]
-            H, W = int(df.iloc[t]['height']), int(df.iloc[t]['width'])
-            if isinstance(rle, str) and rle.strip():
-                mask = rle_decode(rle, (H, W))
-                area = int(mask.sum())
-            else:
-                area = 0
-            area_col = 'area_bf' if channel == 'bf' else 'area_gfp'
-            if area_col in df.columns: df.loc[t, area_col] = area
+            if t < len(new_masks):
+                old_rle = df.loc[t, rle_col] if pd.notna(df.loc[t, rle_col]) else ""
+                new_rle = new_masks[t] if new_masks[t] is not None else ""
+                if old_rle != new_rle:
+                    df.loc[t, rle_col] = new_rle
+                    df.loc[t, source_col] = "manual"
+                
+                rle = new_masks[t]
+                H, W = int(df.iloc[t]['height']), int(df.iloc[t]['width'])
+                if isinstance(rle, str) and rle.strip():
+                    mask = rle_decode(rle, (H, W))
+                    area = int(mask.sum())
+                else:
+                    area = 0
+                area_col = 'area_bf' if channel == 'bf' else 'area_gfp'
+                if area_col in df.columns: df.loc[t, area_col] = area
         df.to_csv(csv_path, index=False)
         
     return jsonify({"status": "success"})
+@app.route("/api/auto_fix_segments", methods=["POST"])
+def auto_fix_segments():
+    data = request.json
+    exp = data.get("experiment")
+    start_t = int(data.get("start_t"))
+    end_t = int(data.get("end_t"))
+    
+    fixed_count = 0
+    modified_dfs = {}
+    
+    for t in range(start_t, end_t + 1):
+        frame_data = dict(data)
+        frame_data["t"] = t
+        film, local_cid, local_t = get_actual_film_and_t(frame_data)
+        
+        if local_cid == -1:
+            continue
+            
+        csv_path = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}" / f"cell_{local_cid}_masks.csv"
+        
+        if csv_path not in modified_dfs:
+            if not csv_path.exists():
+                continue
+            modified_dfs[csv_path] = pd.read_csv(csv_path)
+            
+        df = modified_dfs[csv_path]
+        
+        if local_t >= len(df):
+            continue
+            
+        H, W = int(df.iloc[0]['height']), int(df.iloc[0]['width'])
+        
+        rle_col = 'rle_bf'
+        source_col = 'source_bf'
+        if 'rle_gfp' in df.columns and df['rle_gfp'].dropna().any():
+            rle_col = 'rle_gfp'
+            source_col = 'source_gfp'
+            
+        if source_col not in df.columns:
+            df[source_col] = ""
+            
+        if rle_col not in df.columns:
+            continue
+            
+        existing_rle = df.loc[local_t, rle_col]
+        if not isinstance(existing_rle, str) or not str(existing_rle).strip() or str(existing_rle) == "nan":
+            continue
+            
+        existing_mask = rle_decode(str(existing_rle), (H, W))
+        if not existing_mask.any():
+            continue
+            
+        masks_dir = BASE_MOVIE_ROOT / exp / film / f"Masks_{film}"
+        files = sorted(list(masks_dir.glob(f"{film}_t_{local_t:03d}_c_*_seg.tif")))
+        if not files: files = sorted(list(masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif")))
+        if not files:
+            continue
+            
+        raw_seg = imread(str(files[0]))
+        
+        overlapping_labels, counts = np.unique(raw_seg[existing_mask], return_counts=True)
+        
+        selected_labels = []
+        best_label = 0
+        max_iou = 0.0
+        existing_area = existing_mask.sum()
+        
+        for label, count in zip(overlapping_labels, counts):
+            if label == 0: continue
+            raw_area = np.sum(raw_seg == label)
+            coverage = count / raw_area
+            iou = count / (existing_area + raw_area - count)
+            
+            if coverage >= 0.4:
+                selected_labels.append(label)
+                
+            if iou > max_iou:
+                max_iou = iou
+                best_label = label
+                
+        if not selected_labels and best_label > 0:
+            selected_labels.append(best_label)
+            
+        if selected_labels:
+            new_mask = np.isin(raw_seg, selected_labels)
+            new_rle = rle_encode(new_mask)
+            df.loc[local_t, rle_col] = new_rle
+            df.loc[local_t, source_col] = "manual"
+            area_col = 'area_bf' if rle_col == 'rle_bf' else 'area_gfp'
+            if area_col in df.columns: df.loc[local_t, area_col] = int(new_mask.sum())
+            fixed_count += 1
+            
+    for csv_path, df in modified_dfs.items():
+        df.to_csv(csv_path, index=False)
+        
+    return jsonify({"status": "success", "fixed_count": fixed_count})
 
 
 if __name__ == "__main__":
