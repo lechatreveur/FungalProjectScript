@@ -28,6 +28,7 @@ app = Flask(__name__)
 
 # Default movie root
 BASE_MOVIE_ROOT = Path("/Volumes/X10 Pro/Movies")
+NAS_MOVIE_ROOT = Path("/Volumes/Movies")
 
 # In-memory cache for suspicious cell analysis results: key = "exp::film"
 SUSPICIOUS_CACHE = {}
@@ -3617,7 +3618,71 @@ def auto_fix_segments():
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Fungal Cell Tracking Corrector")
+    parser.add_argument("--sync-nas", type=str, nargs='?', const='all',
+                        help="Sync data from NAS to local SSD. Can specify a specific experiment name (e.g. 2026_01_08_M93) or leave blank/'all' to sync everything.")
+    parser.add_argument("--nas-root", type=str, default=str(NAS_MOVIE_ROOT),
+                        help="Path to the NAS movie directory")
+    parser.add_argument("--local-root", type=str, default=str(BASE_MOVIE_ROOT),
+                        help="Path to the local SSD movie directory")
+    args = parser.parse_args()
+    
+    BASE_MOVIE_ROOT = Path(args.local_root)
+    NAS_MOVIE_ROOT = Path(args.nas_root)
+    
+    if args.sync_nas:
+        print("🔄 Initiating NAS to Local SSD Sync (Pull)...")
+        local_path = Path(args.local_root)
+        nas_path = Path(args.nas_root)
+        
+        local_path.mkdir(parents=True, exist_ok=True)
+        
+        if args.sync_nas == 'all':
+            src = str(nas_path) + "/"
+            dst = str(local_path) + "/"
+        else:
+            src = str(nas_path / args.sync_nas) + "/"
+            dst = str(local_path / args.sync_nas) + "/"
+            
+        print(f"Pulling from NAS: {src} -> Local SSD: {dst}")
+        
+        if not os.path.exists(src.rstrip("/")):
+            print(f"❌ Error: NAS directory '{src}' does not exist.")
+            sys.exit(1)
+            
+        rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
+        try:
+            subprocess.run(rsync_cmd, shell=True, check=True)
+            print("✅ Pull Sync Completed Successfully!")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Pull Sync Failed: {e}")
+            sys.exit(1)
+            
     port = 5001
     print(f"🚀 Starting Corrector Tool at http://127.0.0.1:{port}")
-    # webbrowser.open(f"http://127.0.0.1:{port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    
+    try:
+        app.run(host="0.0.0.0", port=port, debug=False)
+    finally:
+        if args.sync_nas:
+            print("\n🔄 Initiating Local SSD to NAS Sync (Push)...")
+            local_path = Path(args.local_root)
+            nas_path = Path(args.nas_root)
+            
+            if args.sync_nas == 'all':
+                src = str(local_path) + "/"
+                dst = str(nas_path) + "/"
+            else:
+                src = str(local_path / args.sync_nas) + "/"
+                dst = str(nas_path / args.sync_nas) + "/"
+                
+            print(f"Pushing from Local SSD: {src} -> NAS: {dst}")
+            
+            rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
+            try:
+                subprocess.run(rsync_cmd, shell=True, check=True)
+                print("✅ Push Sync Completed Successfully!")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Push Sync Failed: {e}")
+
