@@ -40,6 +40,30 @@ def get_sequence_films(exp_dir):
                 seq_groups[group_name] = actual_ordered
         return seq_groups
         
+    # Custom grouping logic for M133
+    if "M133" in str(exp_dir):
+        fields = set()
+        for f in films:
+            m = re.search(r'_(F\d+)$', f)
+            if m:
+                fields.add(m.group(1))
+                
+        seq_groups = {}
+        for field in fields:
+            group_name = f"YES_Scd1_D_{field}"
+            ordered = [
+                f"YES_Scd1_D_{field}",
+                f"YES_Scd1_D_1_{field}",
+                f"YES_Scd1_D_2_{field}",
+                f"YES_Scd1_D_3_{field}",
+                f"YES_Scd1_D_4_{field}",
+                f"YES_Scd1_D_5_{field}"
+            ]
+            actual_ordered = [f for f in ordered if f in films]
+            if len(actual_ordered) > 1:
+                seq_groups[group_name] = actual_ordered
+        return seq_groups
+        
     seq_groups = {}
     for f in films:
         m = re.search(r'(.*?)(FL|BF)(\d*)_(F\d+)', f)
