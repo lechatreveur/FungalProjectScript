@@ -30,6 +30,19 @@ app = Flask(__name__)
 BASE_MOVIE_ROOT = Path("/Volumes/X10 Pro/Movies")
 NAS_MOVIE_ROOT = Path("/Volumes/Movies")
 
+RELEVANT_EXPERIMENTS = [
+    "2025_06_25",
+    "2025_09_17",
+    "2025_12_31_M92",
+    "2026_01_08_M93",
+    "2026_01_16_M96",
+    "2026_01_18_M97",
+    "2026_04_09_M125",
+    "2026_04_23_M130",
+    "2026_04_29_M133",
+    "2026_04_30_M135"
+]
+
 # In-memory cache for suspicious cell analysis results: key = "exp::film"
 SUSPICIOUS_CACHE = {}
 
@@ -2492,7 +2505,7 @@ def index():
 
 @app.route("/api/list_experiments")
 def list_experiments():
-    experiments = sorted([d.name for d in BASE_MOVIE_ROOT.iterdir() if d.is_dir() and not d.name.startswith(".")])
+    experiments = sorted([d.name for d in BASE_MOVIE_ROOT.iterdir() if d.is_dir() and not d.name.startswith(".") and d.name in RELEVANT_EXPERIMENTS])
     return jsonify({"experiments": experiments})
 
 @app.route("/api/list_films_and_sequences")
@@ -3638,26 +3651,34 @@ if __name__ == "__main__":
         
         local_path.mkdir(parents=True, exist_ok=True)
         
-        if args.sync_nas == 'all':
-            src = str(nas_path) + "/"
-            dst = str(local_path) + "/"
-        else:
-            src = str(nas_path / args.sync_nas) + "/"
-            dst = str(local_path / args.sync_nas) + "/"
-            
-        print(f"Pulling from NAS: {src} -> Local SSD: {dst}")
+        sync_list = RELEVANT_EXPERIMENTS if args.sync_nas == 'all' else [args.sync_nas]
+        pull_errors = False
         
-        if not os.path.exists(src.rstrip("/")):
-            print(f"❌ Error: NAS directory '{src}' does not exist.")
-            sys.exit(1)
+        for exp in sync_list:
+            src = str(nas_path / exp) + "/"
+            dst = str(local_path / exp) + "/"
             
-        rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
-        try:
-            subprocess.run(rsync_cmd, shell=True, check=True)
-            print("✅ Pull Sync Completed Successfully!")
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Pull Sync Failed: {e}")
+            print(f"Pulling from NAS: {src} -> Local SSD: {dst}")
+            
+            if not os.path.exists(src.rstrip("/")):
+                print(f"⚠️ Warning: NAS directory '{src}' does not exist. Skipping.")
+                continue
+                
+            local_path_exp = local_path / exp
+            local_path_exp.mkdir(parents=True, exist_ok=True)
+            
+            rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
+            try:
+                subprocess.run(rsync_cmd, shell=True, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Pull Sync Failed for {exp}: {e}")
+                pull_errors = True
+                
+        if pull_errors:
+            print("⚠️ Pull Sync finished with errors.")
             sys.exit(1)
+        else:
+            print("✅ Pull Sync Completed Successfully!")
             
     port = 5001
     print(f"🚀 Starting Corrector Tool at http://127.0.0.1:{port}")
@@ -3670,19 +3691,24 @@ if __name__ == "__main__":
             local_path = Path(args.local_root)
             nas_path = Path(args.nas_root)
             
-            if args.sync_nas == 'all':
-                src = str(local_path) + "/"
-                dst = str(nas_path) + "/"
-            else:
-                src = str(local_path / args.sync_nas) + "/"
-                dst = str(nas_path / args.sync_nas) + "/"
-                
-            print(f"Pushing from Local SSD: {src} -> NAS: {dst}")
+            sync_list = RELEVANT_EXPERIMENTS if args.sync_nas == 'all' else [args.sync_nas]
             
-            rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
-            try:
-                subprocess.run(rsync_cmd, shell=True, check=True)
-                print("✅ Push Sync Completed Successfully!")
-            except subprocess.CalledProcessError as e:
-                print(f"❌ Push Sync Failed: {e}")
+            for exp in sync_list:
+                src = str(local_path / exp) + "/"
+                dst = str(nas_path / exp) + "/"
+                
+                if not os.path.exists(src.rstrip("/")):
+                    continue
+                    
+                print(f"Pushing from Local SSD: {src} -> NAS: {dst}")
+                
+                nas_path_exp = nas_path / exp
+                nas_path_exp.mkdir(parents=True, exist_ok=True)
+                
+                rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
+                try:
+                    subprocess.run(rsync_cmd, shell=True, check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"❌ Push Sync Failed for {exp}: {e}")
+            print("✅ Push Sync Completed Successfully!")
 
