@@ -281,25 +281,188 @@ class TrackerDataset(Dataset):
         self,
         movie_root: str,
         hold_out_film: Optional[str] = None,
+        curated_csv: Optional[str] = None,
         augment: bool = True,
         topk_neg: int = TOPK_NEG,
     ):
+        self.movie_root = Path(movie_root)
+        self.hold_out_film = hold_out_film
         self.augment  = augment
         self.topk_neg = topk_neg
         self.samples: List[Dict] = []
 
-        films = discover_corrected_films(movie_root)
-        if not films:
-            raise RuntimeError(f"No corrected films found under {movie_root}")
+        # Determine pickle cache path
+        cache_name = f"samples_cache_{hold_out_film or 'none'}.pkl"
+        if curated_csv:
+            cache_name = f"samples_cache_curated_{hold_out_film or 'none'}.pkl"
+        samples_cache_path = Path(__file__).parent / cache_name
 
-        for meta in films:
-            if hold_out_film and meta["film"] == hold_out_film:
-                print(f"  [dataset] Hold-out: skipping {meta['film']}")
+        # Check cache validity
+        cache_valid = False
+        if samples_cache_path.exists():
+            cache_valid = True
+            if curated_csv:
+                csv_path = Path(curated_csv)
+                if csv_path.exists() and samples_cache_path.stat().st_mtime < csv_path.stat().st_mtime:
+                    cache_valid = False
+
+        if cache_valid:
+            print(f"[TrackerDataset] Loading indexed samples from cache: {samples_cache_path}")
+            try:
+                import pickle
+                with open(samples_cache_path, "rb") as f:
+                    self.samples = pickle.load(f)
+                print(f"[TrackerDataset] {len(self.samples)} samples loaded from pickle cache.")
+                return
+            except Exception as e:
+                print(f"[TrackerDataset] Failed to load pickle cache: {e}. Rebuilding...")
+                self.samples = []
+
+        if curated_csv and Path(curated_csv).exists():
+            print(f"[TrackerDataset] Loading directly from CSV: {curated_csv}")
+            self._load_from_csv(curated_csv)
+            print(f"[TrackerDataset] {len(self.samples)} frame-pair samples loaded.")
+        else:
+            films = discover_corrected_films(movie_root)
+            if not films:
+                raise RuntimeError(f"No corrected films found under {movie_root}")
+
+            for meta in films:
+                if hold_out_film and meta["film"] == hold_out_film:
+                    print(f"  [dataset] Hold-out: skipping {meta['film']}")
+                    continue
+                self._index_film(meta)
+
+            print(f"[TrackerDataset] {len(self.samples)} frame-pair samples "
+                  f"from {len(films)} films")
+
+        # Save to pickle cache
+        try:
+            import pickle
+            with open(samples_cache_path, "wb") as f:
+                pickle.dump(self.samples, f)
+            print(f"[TrackerDataset] Saved samples cache to {samples_cache_path}")
+        except Exception as e:
+            print(f"[TrackerDataset] Failed to save samples cache: {e}")
+              
+    def _load_from_csv(self, csv_path: str):
+        df_csv = pd.read_csv(csv_path)
+        grouped = df_csv.groupby(["film", "cell_id"])
+        
+        for (film_name, cell_id), group in grouped:
+            if self.hold_out_film and film_name == self.hold_out_film:
+                print(f"  [dataset] Hold-out: skipping {film_name}")
                 continue
-            self._index_film(meta)
-
-        print(f"[TrackerDataset] {len(self.samples)} frame-pair samples "
-              f"from {len(films)} films")
+            film_dir = self.movie_root / "2026_01_08_M93" / film_name
+            if not film_dir.exists():
+                film_dir = self.movie_root / film_name
+            if not film_dir.exists():
+                continue
+                
+            frames_dir = film_dir / f"Frames_{film_name}"
+            masks_dir = film_dir / f"Masks_{film_name}"
+            tracked_dir = film_dir / f"TrackedCells_{film_name}"
+            
+            csv_file = tracked_dir / f"cell_{cell_id}_masks.csv"
+            if not csv_file.exists():
+                continue
+                
+            try:
+                df = pd.read_csv(csv_file)
+            except Exception:
+                continue
+                
+            rle_col = "rle_bf"
+            if "rle_gfp" in df.columns and df["rle_gfp"].dropna().any():
+                rle_col = "rle_gfp"
+                
+            H = int(df.iloc[0]["height"])
+            W = int(df.iloc[0]["width"])
+            
+            channel_idx = 0
+            
+            # Discover frame count
+            frame_files = sorted([
+                f for f in frames_dir.iterdir()
+                if f.name.endswith(".tif")
+                and not f.name.endswith("_seg.tif")
+                and f"_c_{channel_idx}.tif" in f.name
+            ])
+            T = len(frame_files)
+            if T < 2:
+                continue
+                
+            film_meta = {
+                "film": film_name,
+                "film_dir": film_dir,
+                "frames_dir": frames_dir,
+                "masks_dir": masks_dir,
+                "tracked_dir": tracked_dir,
+            }
+            sep_probs = _build_septum_scores(
+                film_meta, cell_id, df, rle_col, T, channel_idx)
+                
+            for _, row_item in group.iterrows():
+                t = int(row_item["t"])
+                if t >= T - 1:
+                    continue
+                row_t = df[df["time_point"] == t]
+                row_t1 = df[df["time_point"] == t + 1]
+                if row_t.empty or row_t1.empty:
+                    continue
+                    
+                rle_t = str(row_t.iloc[0][rle_col]).strip()
+                rle_t1 = str(row_t1.iloc[0][rle_col]).strip()
+                if not rle_t or rle_t == "nan":
+                    continue
+                if not rle_t1 or rle_t1 == "nan":
+                    continue
+                    
+                mask_t = rle_decode(rle_t, (H, W)).astype(bool)
+                mask_t1 = rle_decode(rle_t1, (H, W)).astype(bool)
+                if not mask_t.any() or not mask_t1.any():
+                    continue
+                    
+                area_t = float(mask_t.sum())
+                area_t1 = float(mask_t1.sum())
+                
+                comp_col = "composition_bf" if "composition_bf" in df.columns else None
+                comp_t1 = ""
+                if comp_col:
+                    comp_t1 = str(row_t1.iloc[0].get(comp_col, ""))
+                div_label = int(
+                    comp_t1 == "pair" or
+                    (area_t > 0 and area_t1 / area_t < 0.60)
+                )
+                
+                mrg_label = 0
+                seg_t1_path = masks_dir / f"{film_name}_t_{t+1:03d}_c_{channel_idx}_seg.tif"
+                if seg_t1_path.exists():
+                    try:
+                        seg_t1 = to_labeled_current(load_segmentation(str(seg_t1_path)))
+                        mrg_label = int(self._is_merge_frame(
+                            mask_t1, seg_t1, sep_probs[t + 1]))
+                    except Exception:
+                        pass
+                        
+                self.samples.append({
+                    "film":        film_name,
+                    "film_dir":    film_dir,
+                    "frames_dir":  frames_dir,
+                    "masks_dir":   masks_dir,
+                    "channel_idx": channel_idx,
+                    "H": H, "W": W,
+                    "cell_id":     cell_id,
+                    "t":           t,
+                    "rle_t":       rle_t,
+                    "rle_t1":      rle_t1,
+                    "area_t":      area_t,
+                    "area_t1":     area_t1,
+                    "sep_t":       float(sep_probs[t]),
+                    "sep_t1":      float(sep_probs[t + 1]),
+                    "div_label":   div_label,
+                    "mrg_label":   mrg_label,
+                })
 
     # ── film indexing ───────────────────────────────────────────────
 
@@ -398,8 +561,6 @@ class TrackerDataset(Dataset):
                     "t":           t,
                     "rle_t":       rle_t,
                     "rle_t1":      rle_t1,
-                    "mask_t":      mask_t,
-                    "mask_t1":     mask_t1,
                     "area_t":      area_t,
                     "area_t1":     area_t1,
                     "sep_t":       float(sep_probs[t]),
@@ -442,47 +603,103 @@ class TrackerDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         s = self.samples[idx]
-        film    = s["film"]
-        fd      = s["frames_dir"]
-        md      = s["masks_dir"]
-        ch      = s["channel_idx"]
-        t       = s["t"]
-        H, W    = s["H"], s["W"]
 
-        # ── load images ─────────────────────────────────────────────
-        def load_frame(t_: int):
-            p = fd / f"{film}_t_{t_:03d}_c_{ch}.tif"
-            if p.exists():
-                return imread(str(p))
-            return np.zeros((H, W), dtype=np.uint16)
+        # SSD cache setup
+        cache_dir = Path(__file__).parent / "tracker_dataset_cache"
+        cache_path = cache_dir / f"sample_{idx}.npz"
 
-        img_t  = load_frame(t)
-        img_t1 = load_frame(t + 1)
+        if not cache_path.exists():
+            film    = s["film"]
+            fd      = s["frames_dir"]
+            md      = s["masks_dir"]
+            ch      = s["channel_idx"]
+            t       = s["t"]
+            H, W    = s["H"], s["W"]
 
-        mask_t  = s["mask_t"]
-        mask_t1 = s["mask_t1"]
+            # ── load images ─────────────────────────────────────────────
+            def load_frame(t_: int):
+                p = fd / f"{film}_t_{t_:03d}_c_{ch}.tif"
+                if p.exists():
+                    return imread(str(p))
+                return np.zeros((H, W), dtype=np.uint16)
 
-        # ── bounding box centred on mask_t ──────────────────────────
-        r0, r1, c0, c1 = _padded_bbox(mask_t, H, W)
+            img_t  = load_frame(t)
+            img_t1 = load_frame(t + 1)
 
-        bf_t  = _crop_and_resize(_norm_img(img_t),  r0, r1, c0, c1)
-        bf_t1 = _crop_and_resize(_norm_img(img_t1), r0, r1, c0, c1)
-        mk_t  = _crop_and_resize(mask_t.astype(np.float32), r0, r1, c0, c1)
+            mask_t  = rle_decode(s["rle_t"],  (H, W)).astype(bool)
+            mask_t1 = rle_decode(s["rle_t1"], (H, W)).astype(bool)
 
-        # img3ch: (3, CROP_SIZE, CROP_SIZE)
-        img3ch = np.stack([bf_t, bf_t1, mk_t], axis=0).astype(np.float32)
+            # ── bounding box centred on mask_t ──────────────────────────
+            r0, r1, c0, c1 = _padded_bbox(mask_t, H, W)
 
-        # ── candidate masks at t+1 ───────────────────────────────────
-        seg_t1_path = md / f"{film}_t_{t+1:03d}_c_{ch}_seg.tif"
-        candidates, adjacency = self._build_candidates(
-            seg_t1_path, mask_t1, H, W, r0, r1, c0, c1)
+            bf_t  = _crop_and_resize(_norm_img(img_t),  r0, r1, c0, c1)
+            bf_t1 = _crop_and_resize(_norm_img(img_t1), r0, r1, c0, c1)
+            mk_t  = _crop_and_resize(mask_t.astype(np.float32), r0, r1, c0, c1)
+
+            # img3ch: (3, CROP_SIZE, CROP_SIZE)
+            img3ch = np.stack([bf_t, bf_t1, mk_t], axis=0).astype(np.float32)
+
+            # ── candidate masks at t+1 ───────────────────────────────────
+            seg_t1_path = md / f"{film}_t_{t+1:03d}_c_{ch}_seg.tif"
+            candidates, adjacency = self._build_candidates(
+                seg_t1_path, mask_t1, H, W, r0, r1, c0, c1)
+
+            # ── area ratio ──────────────────────────────────────────────
+            area_ratio = float(s["area_t1"]) / max(float(s["area_t"]), 1.0)
+
+            # Save to SSD cache
+            try:
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                np.savez_compressed(
+                    cache_path,
+                    img3ch=img3ch,
+                    candidates=candidates,
+                    adjacency=adjacency,
+                    area_ratio=area_ratio
+                )
+            except Exception as e:
+                # Fallback silently if save fails (e.g., write permission issue)
+                pass
+        else:
+            # Load from SSD cache
+            try:
+                data = np.load(cache_path)
+                img3ch = data["img3ch"]
+                candidates = data["candidates"]
+                adjacency = float(data["adjacency"])
+                area_ratio = float(data["area_ratio"])
+            except Exception:
+                # Recompute if cache is corrupted
+                film    = s["film"]
+                fd      = s["frames_dir"]
+                md      = s["masks_dir"]
+                ch      = s["channel_idx"]
+                t       = s["t"]
+                H, W    = s["H"], s["W"]
+
+                def load_frame(t_):
+                    p = fd / f"{film}_t_{t_:03d}_c_{ch}.tif"
+                    return imread(str(p)) if p.exists() else np.zeros((H, W), dtype=np.uint16)
+
+                img_t  = load_frame(t)
+                img_t1 = load_frame(t + 1)
+                mask_t  = rle_decode(s["rle_t"],  (H, W)).astype(bool)
+                mask_t1 = rle_decode(s["rle_t1"], (H, W)).astype(bool)
+                r0, r1, c0, c1 = _padded_bbox(mask_t, H, W)
+                bf_t  = _crop_and_resize(_norm_img(img_t), r0, r1, c0, c1)
+                bf_t1 = _crop_and_resize(_norm_img(img_t1), r0, r1, c0, c1)
+                mk_t  = _crop_and_resize(mask_t.astype(np.float32), r0, r1, c0, c1)
+                img3ch = np.stack([bf_t, bf_t1, mk_t], axis=0).astype(np.float32)
+                candidates, adjacency = self._build_candidates(
+                    md / f"{film}_t_{t+1:03d}_c_{ch}_seg.tif", mask_t1, H, W, r0, r1, c0, c1)
+                area_ratio = float(s["area_t1"]) / max(float(s["area_t"]), 1.0)
 
         # ── augmentation ────────────────────────────────────────────
+        # Copy arrays to avoid mutating cached files or read-only numpy structures in memory
+        img3ch = img3ch.copy()
+        candidates = candidates.copy()
         if self.augment:
             img3ch, candidates = _augment(img3ch, candidates)
-
-        # ── area ratio ──────────────────────────────────────────────
-        area_ratio = float(s["area_t1"]) / max(float(s["area_t"]), 1.0)
 
         return {
             "img3ch":    torch.from_numpy(img3ch),                   # (3,H,W)

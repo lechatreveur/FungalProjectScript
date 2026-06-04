@@ -118,6 +118,7 @@ def train(args):
     ds = TrackerDataset(
         movie_root    = args.movie_root,
         hold_out_film = args.hold_out_film,
+        curated_csv   = args.curated_csv,
         augment       = True,
         topk_neg      = 4,
     )
@@ -287,6 +288,7 @@ def evaluate(args):
     ds = TrackerDataset(
         movie_root    = args.movie_root,
         hold_out_film = None,          # load everything then filter
+        curated_csv   = args.curated_csv,
         augment       = False,
         topk_neg      = 4,
     )
@@ -346,6 +348,8 @@ def main():
     parser.add_argument("--batch_size", type=int,   default=16)
     parser.add_argument("--lr",         type=float, default=3e-4)
     parser.add_argument("--eval_only",  action="store_true")
+    parser.add_argument("--curated-csv", type=str, default=None,
+                        help="Path to a master CSV of curated samples. If provided, skips auto-discovery.")
     args = parser.parse_args()
 
     if args.eval_only:

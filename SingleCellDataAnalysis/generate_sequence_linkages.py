@@ -98,7 +98,6 @@ def get_sequence_films(exp_dir):
         for field in fields:
             group_name = f"A14-YES-t_{field}"
             ordered = [
-                f"A14-YES-t-0_{field}",
                 f"A14-YES-t-1_{field}",
                 f"A14-YES-t-2_{field}",
                 f"A14-YES-t-3_{field}",

@@ -74,8 +74,10 @@ parser.add_argument('--xcorr_angle_step', type=float, default=3.0,
                     help='Angle step in degrees for rotation-aware XCorr.')
 parser.add_argument('--xcorr_debug', action='store_true',
                     help='Save per-frame debug figures for XCorr selection (PNG).')
-
-
+parser.add_argument('--use_ai_tracker', action='store_true',
+                    help='Use the Siamese AI Tracker instead of overlap logic.')
+parser.add_argument('--no_plot', action='store_true',
+                    help='Skip plotting single cell crops.')
 
 args = parser.parse_args()
 
@@ -92,16 +94,19 @@ xcorr_fallback_ov = args.xcorr_fallback_ov
 xcorr_angle_pad   = args.xcorr_angle_pad
 xcorr_angle_step  = args.xcorr_angle_step
 xcorr_debug = args.xcorr_debug
-
-
-
+use_ai_tracker = args.use_ai_tracker
 
 # =========================
 # Paths
 # =========================
 output_frames_folder        = os.path.join(working_dir, file_name, f"Frames_{file_name}")
 output_masks_folder         = os.path.join(working_dir, file_name, f"Masks_{file_name}")
-output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}")
+
+if use_ai_tracker:
+    output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}_AI")
+    direction_mode = 'forward' # AI tracker only runs forward
+else:
+    output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}")
 
 # No subfolders under Masks_<file_name> anymore
 os.makedirs(output_masks_folder, exist_ok=True)
@@ -590,31 +595,51 @@ if __name__ == "__main__":
             initial_mask = (labeled_mask == cell_id)
 
         # 2) Tracking in detected channel only
-        xcfg_fwd = {
-            'fallback_overlap_thr': xcorr_fallback_ov,
-            'angle_pad_deg': xcorr_angle_pad,
-            'angle_step_deg': xcorr_angle_step,
-            'num_singles': 3, 'num_pairs': 3, 'pair_pool_k': 6, 'pad_px': 24,
-            'debug': xcorr_debug,
-            'debug_dir': xcorr_debug_dir_fwd,
-        }
-        
-        forward_sel = track_one_direction(
-            range(frame_number), initial_mask,
-            channel=track_channel, first_threshold=0.5, next_threshold=0.7, lock_first=False,
-            xcorr_mode=xcorr_mode, xcorr_cfg=xcfg_fwd
-        )
-        
-        backward_sel = None
-        
-        if direction_mode in ('backward', 'both'):
-            seed_mask_backward = forward_sel[frame_number - 1]["mask"]
-            xcfg_bwd = dict(xcfg_fwd, debug_dir=xcorr_debug_dir_bwd)
-            backward_sel = track_one_direction(
-                range(frame_number - 1, -1, -1), seed_mask_backward,
-                channel=track_channel, first_threshold=0.5, next_threshold=0.7,
-                xcorr_mode=xcorr_mode, xcorr_cfg=xcfg_bwd
+        if use_ai_tracker:
+            print("Loading AI Tracker Model...")
+            import torch
+            from tracker_model import load_tracker
+            from ai_tracking_inference import ai_track_one_direction
+            device = "cpu"
+            ckpt_path = os.path.join(os.path.dirname(__file__), "tracker_checkpoints", "model_latest.pt")
+            model = load_tracker(ckpt_path, device=device)
+            model.eval()
+            print("Running AI Tracker inference...")
+            forward_sel = ai_track_one_direction(
+                t_seq=list(range(frame_number)),
+                ref_start_mask=initial_mask,
+                bf_frame_path_func=bf_frame_path,
+                lab_seg_path_func=_seg_path_any_ext,
+                model=model,
+                device=device
             )
+            backward_sel = None
+        else:
+            xcfg_fwd = {
+                'fallback_overlap_thr': xcorr_fallback_ov,
+                'angle_pad_deg': xcorr_angle_pad,
+                'angle_step_deg': xcorr_angle_step,
+                'num_singles': 3, 'num_pairs': 3, 'pair_pool_k': 6, 'pad_px': 24,
+                'debug': xcorr_debug,
+                'debug_dir': xcorr_debug_dir_fwd,
+            }
+            
+            forward_sel = track_one_direction(
+                range(frame_number), initial_mask,
+                channel=track_channel, first_threshold=0.5, next_threshold=0.7, lock_first=False,
+                xcorr_mode=xcorr_mode, xcorr_cfg=xcfg_fwd
+            )
+            
+            backward_sel = None
+            
+            if direction_mode in ('backward', 'both'):
+                seed_mask_backward = forward_sel[frame_number - 1]["mask"]
+                xcfg_bwd = dict(xcfg_fwd, debug_dir=xcorr_debug_dir_bwd)
+                backward_sel = track_one_direction(
+                    range(frame_number - 1, -1, -1), seed_mask_backward,
+                    channel=track_channel, first_threshold=0.5, next_threshold=0.7,
+                    xcorr_mode=xcorr_mode, xcorr_cfg=xcfg_bwd
+                )
 
 
 
@@ -647,6 +672,8 @@ if __name__ == "__main__":
 
         for t in range(frame_number):
             ch_sel, src_sel = choose(forward_sel, backward_sel, t)
+            if t == 0 and args.seed_from_csv:
+                src_sel = "manual"
         
             # Prepare pair fields (default empty)
             comp = ch_sel.get("composition", "single")
@@ -705,6 +732,10 @@ if __name__ == "__main__":
         print(f"[Tracking] Saved {track_channel.upper()} masks to: {masks_csv_path}")
     else:
         print(f"[track] Skipping tracking: {masks_csv_path.name} exists and --update_existing not set.")
+    
+    if getattr(args, 'no_plot', False):
+        print(f"Skipping quantification/plotting for cell {cell_id} due to --no_plot.")
+        sys.exit(0)
 
     # =========================
     # Quantification pass (single-channel)
