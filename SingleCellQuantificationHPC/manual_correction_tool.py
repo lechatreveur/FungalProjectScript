@@ -3667,7 +3667,7 @@ if __name__ == "__main__":
             local_path_exp = local_path / exp
             local_path_exp.mkdir(parents=True, exist_ok=True)
             
-            rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
+            rsync_cmd = f"rsync -avz --update --exclude='__pycache__' --exclude='*.ims' '{src}' '{dst}'"
             try:
                 subprocess.run(rsync_cmd, shell=True, check=True)
             except subprocess.CalledProcessError as e:
@@ -3705,7 +3705,7 @@ if __name__ == "__main__":
                 nas_path_exp = nas_path / exp
                 nas_path_exp.mkdir(parents=True, exist_ok=True)
                 
-                rsync_cmd = f"rsync -avz --update --exclude='__pycache__' '{src}' '{dst}'"
+                rsync_cmd = f"rsync -avz --update --exclude='__pycache__' --exclude='*.ims' '{src}' '{dst}'"
                 try:
                     subprocess.run(rsync_cmd, shell=True, check=True)
                 except subprocess.CalledProcessError as e:
