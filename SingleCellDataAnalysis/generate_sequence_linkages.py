@@ -109,6 +109,29 @@ def get_sequence_films(exp_dir):
                 seq_groups[group_name] = actual_ordered
         return seq_groups
         
+    # Custom grouping logic for M135
+    if "M135" in str(exp_dir):
+        fields = set()
+        for f in films:
+            m = re.search(r'_(F\d+)$', f)
+            if m:
+                fields.add(m.group(1))
+                
+        seq_groups = {}
+        for field in fields:
+            group_name = f"A14_{field}"
+            ordered = [
+                f"A14_FL1_{field}",
+                f"A14_BF1_{field}",
+                f"A14_FL2_{field}",
+                f"A14_BF2_{field}",
+                f"A14_FL3_{field}"
+            ]
+            actual_ordered = [f for f in ordered if f in films]
+            if len(actual_ordered) > 1:
+                seq_groups[group_name] = actual_ordered
+        return seq_groups
+        
     # Custom grouping logic for M133
     if "M133" in str(exp_dir):
         fields = set()
@@ -297,3 +320,4 @@ if __name__ == "__main__":
     generate_linkages("2026_01_18_M97")
     generate_linkages("2026_04_23_M130")
     generate_linkages("2026_04_29_M133")
+    generate_linkages("2026_04_30_M135")
