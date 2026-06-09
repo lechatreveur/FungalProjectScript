@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
 import os
+import sys
 import subprocess
-
-# Directories to process on the SSD
-WORK_DIRS = [
-    "/Volumes/X10 Pro/Movies/2026_04_23_M130",
-    "/Volumes/X10 Pro/Movies/2026_04_29_M133",
-    "/Volumes/X10 Pro/Movies/2026_04_30_M135"
-]
 
 # Path to the existing export script
 EXPORT_SCRIPT = "/Users/user/Documents/Python_Scripts/FungalProjectScript/batch_ims_export.py"
 
 def run_export(working_dir):
     print(f"\n🚀 Starting export for: {working_dir}")
-    # We'll use a temporary environment variable or just modify the script temporarily
-    # But a cleaner way is to use a sed command to update the hardcoded path in a temporary file
     temp_script = "/tmp/temp_export.py"
     
     with open(EXPORT_SCRIPT, 'r') as f:
@@ -34,7 +26,13 @@ def run_export(working_dir):
     print(f"✅ Finished export for: {working_dir}")
 
 if __name__ == "__main__":
-    for wd in WORK_DIRS:
+    if len(sys.argv) < 2:
+        print("Usage: python run_local_ims_export.py <movie_folder_1> [<movie_folder_2> ...]")
+        print("Example: python run_local_ims_export.py 2026_06_03_M143")
+        sys.exit(1)
+
+    for movie in sys.argv[1:]:
+        wd = f"/Volumes/X10 Pro/Movies/{movie}"
         if os.path.isdir(wd):
             run_export(wd)
         else:

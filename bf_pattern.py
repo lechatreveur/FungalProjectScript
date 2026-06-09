@@ -348,6 +348,7 @@ def bf_pattern_only(
     side_px: int = 80,
     sigma_n_px: float = 1.0,   # positional prior σ along n (pixels)
     sigma_m_px: float = 6.0,   # <-- NEW: positional prior σ along m (pixels)
+    do_plot: bool = False,
 ) -> dict | None:
 
 
@@ -464,84 +465,85 @@ def bf_pattern_only(
     # -------------------------
     # Debug histogram + fit overlay
     # -------------------------
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+    if do_plot:
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
 
-        vals_plot = vals.astype(np.float64, copy=False)
-        if np.issubdtype(raw_crop.dtype, np.integer):
-            vmin, vmax = int(vals_plot.min()), int(vals_plot.max())
-            if vmax - vmin <= 4096:
-                edges = np.arange(vmin - 0.5, vmax + 1.5, 1.0)
-                centers = np.arange(vmin, vmax + 1, 1.0)
-                binw = 1.0
+            vals_plot = vals.astype(np.float64, copy=False)
+            if np.issubdtype(raw_crop.dtype, np.integer):
+                vmin, vmax = int(vals_plot.min()), int(vals_plot.max())
+                if vmax - vmin <= 4096:
+                    edges = np.arange(vmin - 0.5, vmax + 1.5, 1.0)
+                    centers = np.arange(vmin, vmax + 1, 1.0)
+                    binw = 1.0
+                else:
+                    edges = np.linspace(vals_plot.min(), vals_plot.max(), 513)
+                    centers = 0.5 * (edges[:-1] + edges[1:])
+                    binw = float(edges[1] - edges[0])
             else:
-                edges = np.linspace(vals_plot.min(), vals_plot.max(), 513)
+                edges = np.linspace(vals_plot.min(), vals_plot.max(), 257)
                 centers = 0.5 * (edges[:-1] + edges[1:])
                 binw = float(edges[1] - edges[0])
-        else:
-            edges = np.linspace(vals_plot.min(), vals_plot.max(), 257)
-            centers = 0.5 * (edges[:-1] + edges[1:])
-            binw = float(edges[1] - edges[0])
 
-        counts, _ = np.histogram(vals_plot, bins=edges)
-        scale = vals_plot.size * binw
+            counts, _ = np.histogram(vals_plot, bins=edges)
+            scale = vals_plot.size * binw
 
-        gauss_counts_list = []
-        for k in range(3):
-            sigma_eff = max(float(sigmas[k]), 1e-9)
-            gpdf = (1.0 / (math.sqrt(2.0 * math.pi) * sigma_eff)) * np.exp(
-                -0.5 * ((centers - mus[k]) / sigma_eff) ** 2
-            )
-            gauss_counts_list.append(pis[k] * gpdf * scale)
+            gauss_counts_list = []
+            for k in range(3):
+                sigma_eff = max(float(sigmas[k]), 1e-9)
+                gpdf = (1.0 / (math.sqrt(2.0 * math.pi) * sigma_eff)) * np.exp(
+                    -0.5 * ((centers - mus[k]) / sigma_eff) ** 2
+                )
+                gauss_counts_list.append(pis[k] * gpdf * scale)
 
-        widthU = max(b - a, 1e-9)
-        updf = np.zeros_like(centers, dtype=np.float64)
-        inU = (centers >= a) & (centers <= b)
-        updf[inU] = 1.0 / widthU
-        uni_counts = pis[3] * updf * scale
+            widthU = max(b - a, 1e-9)
+            updf = np.zeros_like(centers, dtype=np.float64)
+            inU = (centers >= a) & (centers <= b)
+            updf[inU] = 1.0 / widthU
+            uni_counts = pis[3] * updf * scale
 
-        mix_counts = uni_counts.copy()
-        for gc in gauss_counts_list:
-            mix_counts += gc
+            mix_counts = uni_counts.copy()
+            for gc in gauss_counts_list:
+                mix_counts += gc
 
-        order = np.argsort(mus)
-        gauss_counts_s = [gauss_counts_list[i] for i in order]
+            order = np.argsort(mus)
+            gauss_counts_s = [gauss_counts_list[i] for i in order]
 
-        os.makedirs(out_dir, exist_ok=True)
-        fig, ax = plt.subplots(figsize=(7.6, 4.8), dpi=150)
-        ax.bar(centers, counts, width=binw, align="center", alpha=0.35, label="Masked pixels")
-        ax.plot(centers, mix_counts, linewidth=2.4, label="Mixture fit (3G+U)")
-        styles = ["--", "-.", ":"]
-        for idx, gc in enumerate(gauss_counts_s):
-            ax.plot(centers, gc, linewidth=1.6, linestyle=styles[idx % len(styles)],
-                    label=f"G{idx}")
-        ax.plot(centers, uni_counts, linewidth=1.6, linestyle="-", alpha=0.6, label="Uniform")
-        ax.set_xlabel("BF intensity")
-        ax.set_ylabel("Count")
-        ax.set_title(f"EM fit 3G+U (t={t:03d})  iters={n_iter}")
-        if counts.max() > 5000:
-            ax.set_yscale("log")
-        ax.grid(alpha=0.25, linestyle=":")
-        ax.legend(loc="best", fontsize=9)
-        fig.tight_layout()
-        fig.savefig(os.path.join(out_dir, f"bf_hist_emfit_t_{t:03d}.png"))
-        plt.close(fig)
+            os.makedirs(out_dir, exist_ok=True)
+            fig, ax = plt.subplots(figsize=(7.6, 4.8), dpi=150)
+            ax.bar(centers, counts, width=binw, align="center", alpha=0.35, label="Masked pixels")
+            ax.plot(centers, mix_counts, linewidth=2.4, label="Mixture fit (3G+U)")
+            styles = ["--", "-.", ":"]
+            for idx, gc in enumerate(gauss_counts_s):
+                ax.plot(centers, gc, linewidth=1.6, linestyle=styles[idx % len(styles)],
+                        label=f"G{idx}")
+            ax.plot(centers, uni_counts, linewidth=1.6, linestyle="-", alpha=0.6, label="Uniform")
+            ax.set_xlabel("BF intensity")
+            ax.set_ylabel("Count")
+            ax.set_title(f"EM fit 3G+U (t={t:03d})  iters={n_iter}")
+            if counts.max() > 5000:
+                ax.set_yscale("log")
+            ax.grid(alpha=0.25, linestyle=":")
+            ax.legend(loc="best", fontsize=9)
+            fig.tight_layout()
+            fig.savefig(os.path.join(out_dir, f"bf_hist_emfit_t_{t:03d}.png"))
+            plt.close(fig)
 
-        try:
-            arr = [centers, counts, mix_counts, uni_counts] + gauss_counts_s
-            np.savetxt(
-                os.path.join(out_dir, f"bf_hist_emfit_t_{t:03d}.csv"),
-                np.column_stack(arr),
-                fmt="%.6g,%d," + ",".join(["%.6g"] * (len(arr) - 2)),
-                header="center,count,fit_mix,fit_uniform," + ",".join([f"fit_gauss{k}" for k in range(3)]),
-                comments="",
-            )
-        except Exception:
-            pass
-    except Exception as e:
-        print(f"[warn] EM-fit histogram plotting failed at t={t}: {e}")
+            try:
+                arr = [centers, counts, mix_counts, uni_counts] + gauss_counts_s
+                np.savetxt(
+                    os.path.join(out_dir, f"bf_hist_emfit_t_{t:03d}.csv"),
+                    np.column_stack(arr),
+                    fmt="%.6g,%d," + ",".join(["%.6g"] * (len(arr) - 2)),
+                    header="center,count,fit_mix,fit_uniform," + ",".join([f"fit_gauss{k}" for k in range(3)]),
+                    comments="",
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[warn] EM-fit histogram plotting failed at t={t}: {e}")
 
     # # -------------------------
     # # Support from mode-centered Gaussian
@@ -709,34 +711,35 @@ def bf_pattern_only(
     def _save_bin(mask_bool, path):
         imsave(path, (np.asarray(mask_bool, bool).astype(np.uint8) * 255))
 
-    try:
-        os.makedirs(out_dir, exist_ok=True)
-        # 1) Raw cropped BF
-        _save_u8(raw_crop, os.path.join(out_dir, f"bf_cropped_img_RAW_t_{t:03d}.png"))
-        # 2) Darkest-Gaussian responsibilities (what we threshold)
-        _save_u8(gamma_dark_map, os.path.join(out_dir, f"bf_gamma_dark_t_{t:03d}.png"))
-        # 3) Binary support used by pattern scoring
-        _save_bin(sup_dark, os.path.join(out_dir, f"bf_support_dark_binary_t_{t:03d}.png"))
-        # 4) Intensity gated by dark support
-        _save_u8(np.nan_to_num(support_values, nan=0.0),
-                 os.path.join(out_dir, f"bf_support_intensity_dark_t_{t:03d}.png"))
+    if do_plot:
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            # 1) Raw cropped BF
+            _save_u8(raw_crop, os.path.join(out_dir, f"bf_cropped_img_RAW_t_{t:03d}.png"))
+            # 2) Darkest-Gaussian responsibilities (what we threshold)
+            _save_u8(gamma_dark_map, os.path.join(out_dir, f"bf_gamma_dark_t_{t:03d}.png"))
+            # 3) Binary support used by pattern scoring
+            _save_bin(sup_dark, os.path.join(out_dir, f"bf_support_dark_binary_t_{t:03d}.png"))
+            # 4) Intensity gated by dark support
+            _save_u8(np.nan_to_num(support_values, nan=0.0),
+                     os.path.join(out_dir, f"bf_support_intensity_dark_t_{t:03d}.png"))
 
-        # 5) Overlay of the winning template on the dark support
-        dbg_png = os.path.join(out_dir, f"pattern_overlay_BF_t_{t:03d}.png")
-        save_split_rectangles_pattern_overlay(
-            support_crop=sup_dark,
-            cropped_cell_mask=cropped_cell_mask,
-            midpoint1_rc=mid1_rc,
-            midpoint2_rc=mid2_rc,
-            best_result=pat,
-            out_path=dbg_png,
-            side_px=side_px,
-            bg_image=raw_crop.astype(np.float32),
-            gfp_min=None, gfp_max=None,
-            **templ,   # <-- same values here
-        )
-    except Exception as _e:
-        print(f"[warn] debug saves failed at t={t:03d}: {_e}")
+            # 5) Overlay of the winning template on the dark support
+            dbg_png = os.path.join(out_dir, f"pattern_overlay_BF_t_{t:03d}.png")
+            save_split_rectangles_pattern_overlay(
+                support_crop=sup_dark,
+                cropped_cell_mask=cropped_cell_mask,
+                midpoint1_rc=mid1_rc,
+                midpoint2_rc=mid2_rc,
+                best_result=pat,
+                out_path=dbg_png,
+                side_px=side_px,
+                bg_image=raw_crop.astype(np.float32),
+                gfp_min=None, gfp_max=None,
+                **templ,   # <-- same values here
+            )
+        except Exception as _e:
+            print(f"[warn] debug saves failed at t={t:03d}: {_e}")
 
     # -------------------------
     # Return (no septum intensity metrics)

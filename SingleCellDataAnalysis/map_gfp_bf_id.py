@@ -199,6 +199,7 @@ def map_gfp_to_bf_ids(
             pass
 
     if not g_ids or not b_ids:
+        print(f"Debug: len(g_ids)={len(g_ids)}, len(b_ids)={len(b_ids)}")
         raise RuntimeError("No decodable RLEs found in one or both sets of per-cell CSVs.")
 
     # IoU matrix

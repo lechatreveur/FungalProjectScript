@@ -7,7 +7,6 @@ Created on Thu May 22 12:02:36 2025
 """
 import numpy as np
 from tifffile import imread
-import matplotlib.pyplot as plt
 import os
 import numpy as np
 from skimage.measure import regionprops, label
@@ -62,6 +61,10 @@ def plot_cell_and_gamma_overlay(plot_data,
     Plots: [1] fluorescent cell image with landmarks, and [2] gamma overlay with transparency.
     Layout depends on aspect ratio (side-by-side if tall, top-bottom if wide).
     """
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     H, W = cropped_img.shape
     if H > W:
@@ -186,6 +189,8 @@ def plot_mask(gammas, cropped_cell_mask, y_idx, x_idx, mu):
         img = np.zeros_like(cropped_cell_mask, dtype=float)
         img[y_idx, x_idx] = gamma
         gamma_imgs.append(img)
+
+    import matplotlib.pyplot as plt
 
     # Decide layout based on aspect ratio
     H, W = cropped_cell_mask.shape

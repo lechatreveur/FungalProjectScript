@@ -93,7 +93,8 @@ xcorr_mode       = args.xcorr_select
 xcorr_fallback_ov = args.xcorr_fallback_ov
 xcorr_angle_pad   = args.xcorr_angle_pad
 xcorr_angle_step  = args.xcorr_angle_step
-xcorr_debug = args.xcorr_debug
+xcorr_debug = False
+do_plot = False
 use_ai_tracker = args.use_ai_tracker
 
 # =========================
@@ -116,7 +117,8 @@ os.makedirs(output_tracked_cells_folder, exist_ok=True)
 plot_output_root  = os.path.join(output_tracked_cells_folder, "cell_plots")
 cell_plot_folder_gfp  = os.path.join(plot_output_root, f"cell_{cell_id}")
 cell_plot_folder_bf   = os.path.join(plot_output_root, f"cell_{cell_id}_BF")
-os.makedirs(plot_output_root, exist_ok=True)
+if do_plot:
+    os.makedirs(plot_output_root, exist_ok=True)
 
 xcorr_debug_root = os.path.join(output_tracked_cells_folder, "xcorr_debug", f"cell_{cell_id}")
 xcorr_debug_dir_fwd = os.path.join(xcorr_debug_root, "forward")
@@ -761,8 +763,9 @@ if __name__ == "__main__":
         # per-subcell plot folders (GFP)
         cell_plot_folder_1 = os.path.join(plot_output_root, f"cell_{cell_id}_1")
         cell_plot_folder_2 = os.path.join(plot_output_root, f"cell_{cell_id}_2")
-        os.makedirs(cell_plot_folder_1, exist_ok=True)
-        os.makedirs(cell_plot_folder_2, exist_ok=True)
+        if do_plot:
+            os.makedirs(cell_plot_folder_1, exist_ok=True)
+            os.makedirs(cell_plot_folder_2, exist_ok=True)
 
         # Get dynamic range for GFP (computed earlier)
         for t in range(len(mask_rows)):
@@ -781,7 +784,7 @@ if __name__ == "__main__":
                 img_gfp, mask_gfp, id_suffix='', t=t,
                 plot_dir=cell_plot_folder_gfp, ep_refs=ep_refs,
                 gfp_min=gfp_min, gfp_max=gfp_max, cell_id=str(cell_id),
-                do_plot=True, touches_border_flag=bool(row.get('touches_border_gfp', False)),
+                do_plot=do_plot, touches_border_flag=bool(row.get('touches_border_gfp', False)),
                 allow_split=True
             )
             for r in rows_gfp:
@@ -790,7 +793,8 @@ if __name__ == "__main__":
 
     else:
         # BF quantification (pattern-only pipeline)
-        os.makedirs(cell_plot_folder_bf, exist_ok=True)
+        if do_plot:
+            os.makedirs(cell_plot_folder_bf, exist_ok=True)
 
         for t in range(len(mask_rows)):
             print(f"[t={t}] (BF)")
@@ -818,7 +822,8 @@ if __name__ == "__main__":
                 out_dir=cell_plot_folder_bf,
                 cell_id=str(cell_id),
                 posterior_cutoff=0.05,
-                side_px=50
+                side_px=50,
+                do_plot=do_plot
             )
             if bf_row is not None:
                 bf_row['channel'] = 'bf'

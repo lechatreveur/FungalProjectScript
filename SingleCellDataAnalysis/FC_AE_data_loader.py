@@ -63,8 +63,13 @@ def load_feature_constrained_data(experiments_dict):
     X_feat_raw = np.array(aligned_feat)
     
     # 4. Scale Features
+    X_feat_raw = np.nan_to_num(X_feat_raw, posinf=np.nan, neginf=np.nan)
     mean_f = np.nanmean(X_feat_raw, axis=0)
     std_f = np.nanstd(X_feat_raw, axis=0)
+    
+    # Fill any remaining NaNs in mean/std with 0 and 1
+    mean_f = np.nan_to_num(mean_f, nan=0.0)
+    std_f = np.nan_to_num(std_f, nan=1.0)
     
     class ManualScalerFeat:
         def __init__(self, mean, std):
@@ -75,6 +80,7 @@ def load_feature_constrained_data(experiments_dict):
             
     scaler_feat = ManualScalerFeat(mean_f, std_f)
     X_feat_scaled = scaler_feat.transform(X_feat_raw)
+    X_feat_scaled = np.nan_to_num(X_feat_scaled, nan=0.0)
     
     print(f"✅ Loaded {len(aligned_gids)} cells successfully with BOTH trajectories and 11 features.")
     

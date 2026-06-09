@@ -73,10 +73,12 @@ os.makedirs(brightfield_seg_folder, exist_ok=True)
 os.makedirs(output_tracked_cells_folder, exist_ok=True)
 
 # Output (plots / tables)
+do_plot = False
 plot_output_root  = os.path.join(output_tracked_cells_folder, "cell_plots")
 cell_plot_folder  = os.path.join(plot_output_root, f"cell_{cell_id}")
-os.makedirs(plot_output_root, exist_ok=True)
-os.makedirs(cell_plot_folder, exist_ok=True)
+if do_plot:
+    os.makedirs(plot_output_root, exist_ok=True)
+    os.makedirs(cell_plot_folder, exist_ok=True)
 
 # =========================
 # Path helper functions
@@ -320,8 +322,9 @@ if __name__ == "__main__":
     cell_plot_folder_single = cell_plot_folder
     cell_plot_folder_1      = os.path.join(plot_output_root, f"cell_{cell_id}_1")
     cell_plot_folder_2      = os.path.join(plot_output_root, f"cell_{cell_id}_2")
-    os.makedirs(cell_plot_folder_1, exist_ok=True)
-    os.makedirs(cell_plot_folder_2, exist_ok=True)
+    if do_plot:
+        os.makedirs(cell_plot_folder_1, exist_ok=True)
+        os.makedirs(cell_plot_folder_2, exist_ok=True)
 
     for t in range(frame_number):
         print(f"[t={t}]")
@@ -338,7 +341,7 @@ if __name__ == "__main__":
             img, mask_gfp, id_suffix='', t=t,
             plot_dir=cell_plot_folder, ep_refs=ep_refs,
             gfp_min=gfp_min, gfp_max=gfp_max, cell_id=str(cell_id),
-            do_plot=True, touches_border_flag=bool(row['touches_border']),
+            do_plot=do_plot, touches_border_flag=bool(row['touches_border']),
             allow_split=True
         )
         time_series_data.extend(rows)

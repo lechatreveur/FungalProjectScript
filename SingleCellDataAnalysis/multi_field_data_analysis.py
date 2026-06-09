@@ -10,9 +10,13 @@ import pandas as pd
 
 def load_good_global_ids(working_dir: str, field: str) -> list[int]:
     qc_csv = os.path.join(working_dir, "pipeline_outputs", f"QC__{field}.csv")
-    qc = pd.read_csv(qc_csv)
-    good = qc.loc[qc["label"].astype(str).str.lower() == "good", "global_id"].dropna()
-    return sorted(good.astype(int).unique().tolist())
+    try:
+        qc = pd.read_csv(qc_csv)
+        good = qc.loc[qc["label"].astype(str).str.lower() == "good", "global_id"].dropna()
+        return sorted(good.astype(int).unique().tolist())
+    except FileNotFoundError:
+        print(f"Warning: No QC file found at {qc_csv}. Returning None to signal 'keep all'.")
+        return None
 
 def global_to_local_ids(global_maps_by_film: dict, film: str, good_gids: list[int]) -> dict[int, int]:
     """
@@ -79,7 +83,8 @@ def load_good_aligned_gfp(global_maps, good_gids, aligned_csv: str, film: str) -
     df["global_id"] = df["global_id"].astype(int)
 
     # keep only QC-good
-    df = df[df["global_id"].isin(good_gids)].copy()
+    if good_gids is not None:
+        df = df[df["global_id"].isin(good_gids)].copy()
 
     # use global_id as the plotting cell_id so GFP1/GFP2 match
     df["cell_id"] = df["global_id"].astype(int)

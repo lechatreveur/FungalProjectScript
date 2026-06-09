@@ -85,12 +85,14 @@ os.makedirs(brightfield_seg_folder, exist_ok=True)
 os.makedirs(output_tracked_cells_folder, exist_ok=True)
 
 # Output (plots / tables)
+do_plot = False
 plot_output_root  = os.path.join(output_tracked_cells_folder, "cell_plots")
 cell_plot_folder_gfp  = os.path.join(plot_output_root, f"cell_{cell_id}")       # same as before
 cell_plot_folder_bf   = os.path.join(plot_output_root, f"cell_{cell_id}_BF")    # NEW
-os.makedirs(plot_output_root, exist_ok=True)
-os.makedirs(cell_plot_folder_gfp, exist_ok=True)
-os.makedirs(cell_plot_folder_bf, exist_ok=True)
+if do_plot:
+    os.makedirs(plot_output_root, exist_ok=True)
+    os.makedirs(cell_plot_folder_gfp, exist_ok=True)
+    os.makedirs(cell_plot_folder_bf, exist_ok=True)
 
 # =========================
 # Path helper functions
@@ -458,8 +460,9 @@ if __name__ == "__main__":
     # per-subcell plot folders (GFP)
     cell_plot_folder_1 = os.path.join(plot_output_root, f"cell_{cell_id}_1")
     cell_plot_folder_2 = os.path.join(plot_output_root, f"cell_{cell_id}_2")
-    os.makedirs(cell_plot_folder_1, exist_ok=True)
-    os.makedirs(cell_plot_folder_2, exist_ok=True)
+    if do_plot:
+        os.makedirs(cell_plot_folder_1, exist_ok=True)
+        os.makedirs(cell_plot_folder_2, exist_ok=True)
 
 
 
@@ -484,7 +487,7 @@ if __name__ == "__main__":
             img_gfp, mask_gfp, id_suffix='', t=t,
             plot_dir=cell_plot_folder_gfp, ep_refs=ep_refs,
             gfp_min=gfp_min, gfp_max=gfp_max, cell_id=str(cell_id),
-            do_plot=True, touches_border_flag=bool(row.get('touches_border_gfp', False)),
+            do_plot=do_plot, touches_border_flag=bool(row.get('touches_border_gfp', False)),
             allow_split=True
         )
         # tag GFP rows
@@ -513,7 +516,8 @@ if __name__ == "__main__":
                 out_dir=cell_plot_folder_bf,
                 cell_id=str(cell_id),          # <-- new (explicit) argument
                 posterior_cutoff=0.5,          # optional; same default as before
-                side_px=80                     # optional; same default as before
+                side_px=80,                    # optional; same default as before
+                do_plot=do_plot
             )
 
             if bf_row is not None:

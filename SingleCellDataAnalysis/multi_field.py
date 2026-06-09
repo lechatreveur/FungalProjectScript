@@ -202,12 +202,16 @@ def run_field_sequence(
 ):
     os.makedirs(out_dir, exist_ok=True)
 
-    manifest = load_manifest(WORKING_DIR, relpath=manifest_relpath)
-
     bf_anchors = {}
-    for kind, film in field_seq:
-        if kind == "bf":
-            bf_anchors[film] = bf_anchor_from_manifest(manifest, film)
+    if manifest_relpath:
+        try:
+            manifest = load_manifest(WORKING_DIR, relpath=manifest_relpath)
+            for kind, film in field_seq:
+                if kind == "bf":
+                    bf_anchors[film] = bf_anchor_from_manifest(manifest, film)
+        except FileNotFoundError:
+            print(f"Warning: Manifest not found at {manifest_relpath}. Skipping BF anchors.")
+
 
     def _csv(film):
         return find_timeseries_csv(WORKING_DIR, film)
@@ -267,6 +271,14 @@ def run_field_sequence(
             aligned_csv = os.path.join(out_dir, f"aligned__{gfp_film}__ANCHOR__{bf_film}.csv")
             df_aligned.to_csv(aligned_csv, index=False)
 
+            map_out["aligned_csv"] = aligned_csv
+            map_out["n_aligned_rows"] = int(df_aligned.shape[0])
+        else:
+            df_gfp = pd.read_csv(_csv(gfp_film))
+            df_aligned = df_gfp.copy()
+            df_aligned["aligned_frame_rounded"] = df_aligned["time_point"]
+            aligned_csv = os.path.join(out_dir, f"aligned__{gfp_film}__ANCHOR__{bf_film}.csv")
+            df_aligned.to_csv(aligned_csv, index=False)
             map_out["aligned_csv"] = aligned_csv
             map_out["n_aligned_rows"] = int(df_aligned.shape[0])
 

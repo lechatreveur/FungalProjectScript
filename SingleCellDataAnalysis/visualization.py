@@ -343,7 +343,8 @@ def load_good_gfp1_gfp2_for_field(field, FILM_NAMES, WORKING_DIR, all_global_map
     gfp2 = field_seq[2][1]
 
     # QC-good global ids
-    good_gids = set(load_good_global_ids(WORKING_DIR, field))
+    good_gids_list = load_good_global_ids(WORKING_DIR, field)
+    good_gids = set(good_gids_list) if good_gids_list is not None else None
 
     global_maps = all_global_maps[field]   # film -> {local_id -> global_id}
     pair_maps   = all_res[field]           # run_field_sequence outputs
@@ -364,7 +365,8 @@ def load_good_gfp1_gfp2_for_field(field, FILM_NAMES, WORKING_DIR, all_global_map
         # intersect with QC-good
         good_gids = good_gids.intersection(bf1_has_global)
 
-    good_gids = sorted(good_gids)
+    if good_gids is not None:
+        good_gids = sorted(good_gids)
 
     aligned_gfp1_csv = get_aligned_csv(pair_maps, gfp1, bf1)
     aligned_gfp2_csv = get_aligned_csv(pair_maps, gfp2, bf1)

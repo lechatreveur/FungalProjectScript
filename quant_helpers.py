@@ -10,7 +10,6 @@ Created on Tue Aug 26 14:52:43 2025
 import os
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
 
 from skimage.measure import label, regionprops, find_contours
 from skimage.morphology import remove_small_holes
@@ -125,6 +124,7 @@ def save_prob_and_support_debug(prob_crop, support_crop, out_dir, t, prefix="cro
     """
     Save prob_crop and support_crop as images + a side-by-side debug figure.
     """
+    import matplotlib.pyplot as plt
     os.makedirs(out_dir, exist_ok=True)
 
     p = np.asarray(prob_crop, dtype=float)
@@ -281,6 +281,7 @@ def save_touching_circles_pattern_overlay(
     Green: +1 inside two semicircles; Red: −1 inside square but outside semicircles.
     Opacity ∝ central weighting.
     """
+    import matplotlib.pyplot as plt
     sup = np.asarray(support_crop, bool)
     seg = np.asarray(cropped_cell_mask, bool)
     Hc, Wc = seg.shape
@@ -498,7 +499,8 @@ def quantify_one_object(
     For child calls (allow_split=False): only step (1). Returns: list of row dicts.
     """
     rows_out = []
-    os.makedirs(plot_dir, exist_ok=True)
+    if do_plot:
+        os.makedirs(plot_dir, exist_ok=True)
 
     key = 'single' if id_suffix == '' else id_suffix
     out_cell_id = f"{cell_id}" if id_suffix == '' else f"{cell_id}_{id_suffix}"
@@ -573,7 +575,8 @@ def quantify_one_object(
     cropped_cell_mask  = np.asarray(plot_data[3], bool)
     prob_crop, kept_keys = combine_gammas_prob(plot_data)
     support_crop = prob_to_support_mask_crop(prob_crop, mode='adaptive')
-    save_prob_and_support_debug(prob_crop, support_crop, plot_dir, t, prefix=f"{out_cell_id}")
+    if do_plot:
+        save_prob_and_support_debug(prob_crop, support_crop, plot_dir, t, prefix=f"{out_cell_id}")
 
     # (1) Single-object row
     parent_row = {
@@ -625,15 +628,16 @@ def quantify_one_object(
     })
     #print(pat['best_center_mn'][1])
     # Save pattern overlay
-    try:
-        dbg_png = os.path.join(plot_dir, f"pattern_overlay_t_{t:03d}.png")
-        save_touching_circles_pattern_overlay(
-            support_crop, cropped_cell_mask, mid1_rc, mid2_rc,
-            pat, dbg_png, side_px=side_px,
-            bg_image=cropped_img, gfp_min=gfp_min, gfp_max=gfp_max
-        )
-    except Exception as _e:
-        print(f"[warn] pattern overlay failed at t={t}: {_e}")
+    if do_plot:
+        try:
+            dbg_png = os.path.join(plot_dir, f"pattern_overlay_t_{t:03d}.png")
+            save_touching_circles_pattern_overlay(
+                support_crop, cropped_cell_mask, mid1_rc, mid2_rc,
+                pat, dbg_png, side_px=side_px,
+                bg_image=cropped_img, gfp_min=gfp_min, gfp_max=gfp_max
+            )
+        except Exception as _e:
+            print(f"[warn] pattern overlay failed at t={t}: {_e}")
 
     # Children do not split again
     if not allow_split:
@@ -673,8 +677,11 @@ def quantify_one_object(
     }
 
     # subfolders per child
-    child1_dir = os.path.join(plot_dir, f"{out_cell_id}_1"); os.makedirs(child1_dir, exist_ok=True)
-    child2_dir = os.path.join(plot_dir, f"{out_cell_id}_2"); os.makedirs(child2_dir, exist_ok=True)
+    child1_dir = os.path.join(plot_dir, f"{out_cell_id}_1")
+    child2_dir = os.path.join(plot_dir, f"{out_cell_id}_2")
+    if do_plot:
+        os.makedirs(child1_dir, exist_ok=True)
+        os.makedirs(child2_dir, exist_ok=True)
 
     # quantify child 1
     if mask1_full.sum() == 0:
@@ -891,6 +898,7 @@ def save_split_rectangles_pattern_overlay(
     Green: +1 inside bars; Red: −1 in the central split; 0 elsewhere in the square.
     Opacity ∝ radial falloff.
     """
+    import matplotlib.pyplot as plt
     sup = np.asarray(support_crop, bool)
     seg = np.asarray(cropped_cell_mask, bool)
     Hc, Wc = seg.shape
