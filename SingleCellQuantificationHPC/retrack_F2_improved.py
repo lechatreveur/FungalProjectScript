@@ -25,8 +25,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-sys.path.append('/Users/user/Documents/Python_Scripts/FungalProjectScript/')
-sys.path.append('/Users/user/Documents/Python_Scripts/FungalProjectScript/SingleCellQuantificationHPC/')
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from Cell_tracking_functions import (
     load_segmentation, to_labeled_current, compute_overlap,

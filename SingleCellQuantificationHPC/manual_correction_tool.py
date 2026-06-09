@@ -3473,8 +3473,18 @@ def save_masks():
                 csv_path = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}" / f"cell_{local_id}_masks.csv"
                 if csv_path.exists():
                     df = pd.read_csv(csv_path)
-                    rle_col = 'rle_bf' if channel == 'bf' else 'rle_gfp'
-                    source_col = 'source_bf' if channel == 'bf' else 'source_gfp'
+                    if 'rle_gfp' in df.columns and 'rle_bf' not in df.columns:
+                        rle_col = 'rle_gfp'
+                    elif 'rle_bf' in df.columns and 'rle_gfp' not in df.columns:
+                        rle_col = 'rle_bf'
+                    else:
+                        rle_col = 'rle_bf' if channel == 'bf' else 'rle_gfp'
+                        
+                    source_col = 'source_bf' if rle_col == 'rle_bf' else 'source_gfp'
+                    area_col = 'area_bf' if rle_col == 'rle_bf' else 'area_gfp'
+                    
+                    if rle_col not in df.columns:
+                        df[rle_col] = ""
                     if source_col not in df.columns:
                         df[source_col] = ""
                     
@@ -3497,7 +3507,6 @@ def save_masks():
                             area = int(mask.sum())
                         else:
                             area = 0
-                        area_col = 'area_bf' if channel == 'bf' else 'area_gfp'
                         if area_col in df.columns: df.loc[t, area_col] = area
                     df.to_csv(csv_path, index=False)
                     
@@ -3507,8 +3516,19 @@ def save_masks():
         film = data.get("film")
         csv_path = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}" / f"cell_{cell_id}_masks.csv"
         df = pd.read_csv(csv_path)
-        rle_col = 'rle_bf' if channel == 'bf' else 'rle_gfp'
-        source_col = 'source_bf' if channel == 'bf' else 'source_gfp'
+        
+        if 'rle_gfp' in df.columns and 'rle_bf' not in df.columns:
+            rle_col = 'rle_gfp'
+        elif 'rle_bf' in df.columns and 'rle_gfp' not in df.columns:
+            rle_col = 'rle_bf'
+        else:
+            rle_col = 'rle_bf' if channel == 'bf' else 'rle_gfp'
+            
+        source_col = 'source_bf' if rle_col == 'rle_bf' else 'source_gfp'
+        area_col = 'area_bf' if rle_col == 'rle_bf' else 'area_gfp'
+        
+        if rle_col not in df.columns:
+            df[rle_col] = ""
         if source_col not in df.columns:
             df[source_col] = ""
         
@@ -3527,7 +3547,6 @@ def save_masks():
                     area = int(mask.sum())
                 else:
                     area = 0
-                area_col = 'area_bf' if channel == 'bf' else 'area_gfp'
                 if area_col in df.columns: df.loc[t, area_col] = area
         df.to_csv(csv_path, index=False)
         
@@ -3564,11 +3583,18 @@ def auto_fix_segments():
             
         H, W = int(df.iloc[0]['height']), int(df.iloc[0]['width'])
         
-        rle_col = 'rle_bf'
-        source_col = 'source_bf'
-        if 'rle_gfp' in df.columns and df['rle_gfp'].dropna().any():
+        if 'rle_gfp' in df.columns and 'rle_bf' not in df.columns:
             rle_col = 'rle_gfp'
             source_col = 'source_gfp'
+        elif 'rle_bf' in df.columns and 'rle_gfp' not in df.columns:
+            rle_col = 'rle_bf'
+            source_col = 'source_bf'
+        else:
+            rle_col = 'rle_bf'
+            source_col = 'source_bf'
+            if 'rle_gfp' in df.columns and df['rle_gfp'].dropna().any():
+                rle_col = 'rle_gfp'
+                source_col = 'source_gfp'
             
         if source_col not in df.columns:
             df[source_col] = ""
