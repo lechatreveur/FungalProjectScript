@@ -43,7 +43,7 @@ cd {working_dir}
 
 
 
-python {script_path} --xcorr_select off --xcorr_debug --cell_id {cell_id} --experiment_path {experiment_path} --file_name {file_name} --track_channel {channel} --direction {direction} {update_flag}
+python {script_path} --cell_id {cell_id} --experiment_path {experiment_path} --file_name {file_name} --track_channel {channel} {update_flag}
 
 
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     parser.add_argument('-z', '--z_index', type=int, default=1, help="Z-slice index to load for segmentation.")
     parser.add_argument('-a', '--min_area', type=int, default=2500, help="Minimal cell area.")
     parser.add_argument('--update_existing', action='store_true', help="Retrack cells with masks files.")
-    parser.add_argument('--direction', choices=['forward', 'backward', 'both'], default='both', help="Tracking direction.")
+    parser.add_argument('--direction', choices=['forward', 'backward', 'both'], default='forward', help="Tracking direction.")
     parser.add_argument(
         '--submit',
         choices=['auto', 'slurm', 'none', 'local'],

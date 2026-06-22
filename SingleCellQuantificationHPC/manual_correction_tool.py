@@ -12,6 +12,8 @@ import re
 import json
 import subprocess
 import webbrowser
+import cv2
+import threading
 from io import BytesIO
 from pathlib import Path
 import numpy as np
@@ -19,6 +21,7 @@ import pandas as pd
 from flask import Flask, request, jsonify, send_file, render_template_string
 from skimage.io import imread
 from skimage.measure import label
+
 
 # Add project path to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -40,7 +43,8 @@ RELEVANT_EXPERIMENTS = [
     "2026_04_09_M125",
     "2026_04_23_M130",
     "2026_04_29_M133",
-    "2026_04_30_M135"
+    "2026_04_30_M135",
+    "2026_06_03_M143"
 ]
 
 # In-memory cache for suspicious cell analysis results: key = "exp::film"
@@ -464,6 +468,11 @@ HTML_TEMPLATE = """
                         <button id="chanBfBtn" class="active">BF</button>
                         <button id="chanGfpBtn">GFP</button>
                     </div>
+
+                    <div class="btn-group">
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">View:</span>
+                        <button id="viewModeBtn" style="background-color: #581c87; color: white; font-weight: 500;">Single Cell</button>
+                    </div>
                 </div>
 
                 <div class="control-row" style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 4px;">
@@ -479,6 +488,7 @@ HTML_TEMPLATE = """
                     </div>
                     <div class="btn-group">
                         <button id="undoBtn">Undo (Ctrl+Z)</button>
+                        <button id="usePrevSegmentBtn" title="Use segment from previous frame (P)">Use Previous Segment (P)</button>
                         <button id="clearBtn">Clear Frame Mask</button>
                     </div>
                 </div>
@@ -533,7 +543,7 @@ HTML_TEMPLATE = """
 
             <div class="panel-section" id="suspiciousSection" style="display:none;">
                 <div class="panel-section-title" style="color: #f59e0b;">⚠ Suspicious Frames</div>
-                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">Frames where the mask doesn't match any single cellpose segment.</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">Frames where the segment's centroid jumps significantly.</div>
                 <div class="suspicious-frame-list" id="suspiciousFrameList"></div>
             </div>
 
@@ -685,6 +695,7 @@ HTML_TEMPLATE = """
             numFrames: 0,
             currentFrame: 0,
             channel: 'bf',
+            viewMode: 'single',
             tool: 'select',
             brushSize: 10,
             isPlaying: false,
@@ -762,6 +773,13 @@ HTML_TEMPLATE = """
                     if (st !== 'pending') {
                         btn.classList.add(`qc-${st}`);
                     }
+                    
+                    const isSuspicious = !!(state.suspicious[c.global_id] && state.suspicious[c.global_id].length > 0);
+                    if (isSuspicious) {
+                        btn.classList.add('suspicious');
+                    } else {
+                        btn.classList.remove('suspicious');
+                    }
                 }
             });
 
@@ -821,13 +839,13 @@ HTML_TEMPLATE = """
             state.cells = data.cells;
             state.lineageTree = data.lineage || {};
             
+            state.qc = {};
+            state.suspicious = {};
+            
             const cellGrid = document.getElementById('cellGrid');
             cellGrid.innerHTML = state.cells.map(c => `
                 <div class="cell-item" id="cell-item-${c.global_id}" onclick="selectCell('${c.global_id}')">${c.display_name}</div>
             `).join('');
-            
-            state.qc = {};
-            state.suspicious = {};
             
 
             if (state.cells.length > 0) {
@@ -849,6 +867,15 @@ HTML_TEMPLATE = """
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
 
+            // Asynchronously fetch suspicious cells to prevent blocking the UI
+            fetch(`/api/suspicious_cells?experiment=${exp}&sequence=${target}`)
+                .then(r => r.json())
+                .then(suspData => {
+                    state.suspicious = suspData.suspicious || {};
+                    updateQCUI();
+                    renderSuspiciousTicks();
+                })
+                .catch(e => console.error("Error fetching suspicious cells:", e));
         }
 
         function getActiveFilmAndLocalCell() {
@@ -920,6 +947,7 @@ HTML_TEMPLATE = """
             updateQCUI();
             renderGallery();
             await loadSeptumLabels(cellId);
+            renderSuspiciousTicks();
         }
 
         function renderLinkageBoard() {
@@ -968,6 +996,53 @@ HTML_TEMPLATE = """
                 container.appendChild(tick);
                 container.appendChild(lbl);
             }
+        }
+
+        function renderSuspiciousTicks() {
+            const container = document.getElementById('suspiciousTicks');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            const cellId = state.selectedCell;
+            const list = document.getElementById('suspiciousFrameList');
+            const section = document.getElementById('suspiciousSection');
+            
+            if (cellId === null) {
+                if (section) section.style.display = 'none';
+                if (list) list.innerHTML = '';
+                return;
+            }
+            
+            const frames = state.suspicious[cellId] || [];
+            
+            if (frames.length === 0) {
+                if (section) section.style.display = 'none';
+                if (list) list.innerHTML = '';
+                return;
+            }
+            
+            if (section) section.style.display = 'block';
+            if (list) {
+                list.innerHTML = frames.map(t => 
+                    `<button class="suspicious-frame-btn" onclick="goToFrame(${t})">t=${t}</button>`
+                ).join('');
+            }
+            
+            if (state.numFrames <= 1) return;
+            
+            frames.forEach(t => {
+                const pct = (t / (state.numFrames - 1)) * 100;
+                const tick = document.createElement('div');
+                tick.className = 'suspicious-tick';
+                tick.style.left = `calc(var(--tick-inset) + (100% - 2 * var(--tick-inset)) * ${pct / 100})`;
+                container.appendChild(tick);
+            });
+        }
+
+        window.goToFrame = function(t) {
+            state.currentFrame = t;
+            document.getElementById('timeSlider').value = t;
+            displayFrame();
         }
 
         
@@ -1081,6 +1156,20 @@ HTML_TEMPLATE = """
             });
             
             const ts = Date.now();
+            if (state.viewMode === 'population') {
+                const popUrl = `/api/population_frame?experiment=${state.selectedExp}&${modeParam}&cell_id=${state.selectedCell}&t=${state.currentFrame}&_ts=${ts}`;
+                const img = await loadImage(popUrl);
+                if (!img) return;
+                
+                canvas.width = state.imgWidth;
+                canvas.height = state.imgHeight;
+                canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.scale})`;
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                return;
+            }
+            
             const imgUrl = `/api/frame_image?experiment=${state.selectedExp}&${modeParam}&cell_id=${state.selectedCell}&t=${state.currentFrame}&channel=${state.channel}&_ts=${ts}`;
             const promises = [loadImage(imgUrl)];
             
@@ -1329,6 +1418,28 @@ HTML_TEMPLATE = """
             document.getElementById('chanBfBtn').onclick = () => { state.channel = 'bf'; updateChannelButtons(); displayFrame(); renderGallery(); };
             document.getElementById('chanGfpBtn').onclick = () => { state.channel = 'gfp'; updateChannelButtons(); displayFrame(); renderGallery(); };
 
+            document.getElementById('viewModeBtn').onclick = () => {
+                state.viewMode = state.viewMode === 'single' ? 'population' : 'single';
+                const btn = document.getElementById('viewModeBtn');
+                if (state.viewMode === 'population') {
+                    btn.innerText = 'Population';
+                    btn.style.backgroundColor = 'var(--accent-primary)';
+                    selectTool('select');
+                    document.getElementById('toolBrushBtn').disabled = true;
+                    document.getElementById('toolEraserBtn').disabled = true;
+                    document.getElementById('toolBrushBtn').style.opacity = 0.5;
+                    document.getElementById('toolEraserBtn').style.opacity = 0.5;
+                } else {
+                    btn.innerText = 'Single Cell';
+                    btn.style.backgroundColor = '#581c87';
+                    document.getElementById('toolBrushBtn').disabled = false;
+                    document.getElementById('toolEraserBtn').disabled = false;
+                    document.getElementById('toolBrushBtn').style.opacity = 1.0;
+                    document.getElementById('toolEraserBtn').style.opacity = 1.0;
+                }
+                displayFrame();
+            };
+
             const toolBtns = {
                 select: document.getElementById('toolSelectBtn'),
                 brush: document.getElementById('toolBrushBtn'),
@@ -1362,6 +1473,19 @@ HTML_TEMPLATE = """
             });
 
             document.getElementById('undoBtn').onclick = undoStroke;
+            document.getElementById('usePrevSegmentBtn').onclick = () => {
+                if (state.currentFrame > 0 && state.cellMasks && state.cellMasks.length > 0) {
+                    const prevRle = state.cellMasks[state.currentFrame - 1] || "";
+                    state.drawingHistory.push(state.cellMasks[state.currentFrame] || "");
+                    if (state.drawingHistory.length > 20) state.drawingHistory.shift();
+                    
+                    state.cellMasks[state.currentFrame] = prevRle;
+                    displayFrame();
+                    markDirty();
+                } else {
+                    alert("Cannot copy. No previous frame mask exists.");
+                }
+            };
             document.getElementById('clearBtn').onclick = () => {
                 state.cellMasks[state.currentFrame] = "";
                 displayFrame();
@@ -1468,6 +1592,7 @@ HTML_TEMPLATE = """
                 else if (e.key.toLowerCase() === 's') selectTool('select');
                 else if (e.key.toLowerCase() === 'b') selectTool('brush');
                 else if (e.key.toLowerCase() === 'e') selectTool('eraser');
+                else if (e.key.toLowerCase() === 'p') document.getElementById('usePrevSegmentBtn').click();
                 else if (e.key.toLowerCase() === 'z' && e.ctrlKey) undoStroke();
             });
 
@@ -2446,6 +2571,7 @@ def ensure_pseudo_sequence_cells(exp, sequence, data):
         cells = []
         if tracked_dir.exists():
             for cf in tracked_dir.glob("cell_*_masks.csv"):
+                if cf.name.startswith("."): continue
                 m = re.search(r'cell_(\d+)_masks\.csv', cf.name)
                 if m:
                     cells.append(int(m.group(1)))
@@ -2454,6 +2580,7 @@ def ensure_pseudo_sequence_cells(exp, sequence, data):
 def get_film_frame_count_and_size(exp, film):
     tracked_dir = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}"
     for cf in tracked_dir.iterdir():
+        if cf.name.startswith("."): continue
         if cf.name.endswith("_masks.csv"):
             try:
                 df = pd.read_csv(cf)
@@ -2462,7 +2589,7 @@ def get_film_frame_count_and_size(exp, film):
                 continue
     # Fallback to frames dir
     frames_dir = BASE_MOVIE_ROOT / exp / film / f"Frames_{film}"
-    files = list(frames_dir.glob("*.tif"))
+    files = [f for f in frames_dir.glob("*.tif") if not f.name.startswith(".")]
     if not files:
         return 0, 0, 0
     img = imread(str(files[0]))
@@ -2481,6 +2608,7 @@ def resolve_global_t(exp, sequence, global_cell_id, global_t):
     if sequence not in data:
         raise ValueError("Sequence not found")
         
+    ensure_pseudo_sequence_cells(exp, sequence, data)
     films = data[sequence]["films"]
     local_ids = data[sequence]["global_cells"].get(global_cell_id, [-1]*len(films))
     
@@ -2495,9 +2623,194 @@ def resolve_global_t(exp, sequence, global_cell_id, global_t):
     # If out of bounds
     return films[-1], local_ids[-1], L - 1
 
+def find_time_from_name(name):
+    m = re.search(r"_t_(\d+)_", name)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+def id_to_color(cell_id: int):
+    rng = abs(hash(int(cell_id)))
+    h = rng % 180
+    s = 200 + (rng // 180) % 56
+    v = 220 + (rng // (180 * 56)) % 36
+    hsv = np.uint8([[[h, s, v]]])
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0].tolist()
+    return int(bgr[0]), int(bgr[1]), int(bgr[2])
+
+def generate_population_frame_image(exp, film, t_val, cell_maps=None, files=None):
+    if files is None:
+        frames_dir = BASE_MOVIE_ROOT / exp / film / f"Frames_{film}"
+        files = sorted([f for f in frames_dir.glob(f"{film}_t_*_c_*.tif") if not f.name.startswith(".")])
+        if not files:
+            files = sorted([f for f in frames_dir.glob(f"*_t_*_c_*.tif") if not f.name.startswith(".")])
+            
+    t_files = [f for f in files if find_time_from_name(f.name) == t_val]
+    if not t_files:
+        return None
+        
+    img = imread(str(t_files[0]))
+    H, W = img.shape[:2]
+    
+    p_lo = np.percentile(img, 1.0)
+    p_hi = np.percentile(img, 99.5)
+    if p_hi > p_lo:
+        img_scaled = np.clip((img - p_lo) / (p_hi - p_lo) * 255.0, 0, 255).astype(np.uint8)
+    else:
+        img_scaled = (img / img.max() * 255.0).astype(np.uint8) if img.max() > 0 else img.astype(np.uint8)
+        
+    if len(img_scaled.shape) == 2:
+        img_bgr = cv2.cvtColor(img_scaled, cv2.COLOR_GRAY2BGR)
+    else:
+        img_bgr = img_scaled.copy()
+        
+    if cell_maps is None:
+        cell_maps = []
+        tracked_dir = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}"
+        if tracked_dir.is_dir():
+            for cf in tracked_dir.iterdir():
+                if cf.name.startswith("."): continue
+                m = re.match(r"^cell_(\d+)_masks\.csv$", cf.name)
+                if m:
+                    cell_id = int(m.group(1))
+                    try:
+                        df = pd.read_csv(cf)
+                        time_to_rle = {}
+                        for idx, row in df.iterrows():
+                            t_pt = int(row['time_point'])
+                            rle_col = 'rle_bf'
+                            if 'rle_gfp' in df.columns and pd.notna(row.get('rle_gfp')) and str(row.get('rle_gfp')).strip():
+                                rle_col = 'rle_gfp'
+                            if rle_col in df.columns:
+                                rle = row[rle_col]
+                                if isinstance(rle, str) and rle.strip():
+                                    time_to_rle[t_pt] = rle
+                        cell_maps.append((cell_id, time_to_rle))
+                    except Exception:
+                        pass
+                        
+    overlay = np.zeros_like(img_bgr, dtype=np.uint8)
+    alpha = 0.4
+    
+    for cell_id, time_to_rle in cell_maps:
+        rle = time_to_rle.get(t_val)
+        if rle is None:
+            continue
+        try:
+            mask = rle_decode(rle, (H, W))
+            if not mask.any():
+                continue
+                
+            color = id_to_color(cell_id)
+            overlay[mask] = color
+            
+            ys, xs = np.where(mask)
+            if len(xs) > 0:
+                cx = int(np.mean(xs))
+                cy = int(np.mean(ys))
+                text = str(cell_id)
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                scale = 0.8
+                thickness = 2
+                cv2.putText(img_bgr, text, (cx, cy), font, scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+                cv2.putText(img_bgr, text, (cx, cy), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        except Exception:
+            pass
+            
+    blended = cv2.addWeighted(overlay, alpha, img_bgr, 1.0, 0.0)
+    
+    max_dim = 1000
+    if max(H, W) > max_dim:
+        scale = max_dim / max(H, W)
+        new_W = int(W * scale)
+        new_H = int(H * scale)
+        blended_resized = cv2.resize(blended, (new_W, new_H), interpolation=cv2.INTER_AREA)
+    else:
+        blended_resized = blended
+        
+    _, jpeg_encoded = cv2.imencode('.jpg', blended_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    return jpeg_encoded.tobytes()
+
+RUNNING_PREGENERATIONS = set()
+PREGENERATION_LOCK = threading.Lock()
+
+def background_generate_population_frames(exp, film):
+    try:
+        frames_dir = BASE_MOVIE_ROOT / exp / film / f"Frames_{film}"
+        if not frames_dir.is_dir():
+            return
+        files = sorted([f for f in frames_dir.glob(f"{film}_t_*_c_*.tif") if not f.name.startswith(".")])
+        if not files:
+            files = sorted([f for f in frames_dir.glob(f"*_t_*_c_*.tif") if not f.name.startswith(".")])
+        if not files:
+            return
+            
+        t_points = sorted(list(set([find_time_from_name(f.name) for f in files])))
+        t_points = [t for t in t_points if t is not None]
+        
+        cache_dir = BASE_MOVIE_ROOT / exp / film / f"PopulationFrames_{film}"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        cell_maps = []
+        tracked_dir = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}"
+        if tracked_dir.is_dir():
+            for cf in tracked_dir.iterdir():
+                if cf.name.startswith("."): continue
+                m = re.match(r"^cell_(\d+)_masks\.csv$", cf.name)
+                if m:
+                    cell_id = int(m.group(1))
+                    try:
+                        df = pd.read_csv(cf)
+                        time_to_rle = {}
+                        for idx, row in df.iterrows():
+                            t_val = int(row['time_point'])
+                            rle_col = 'rle_bf'
+                            if 'rle_gfp' in df.columns and pd.notna(row.get('rle_gfp')) and str(row.get('rle_gfp')).strip():
+                                rle_col = 'rle_gfp'
+                            if rle_col in df.columns:
+                                rle = row[rle_col]
+                                if isinstance(rle, str) and rle.strip():
+                                    time_to_rle[t_val] = rle
+                        cell_maps.append((cell_id, time_to_rle))
+                    except Exception:
+                        pass
+                        
+        if not cell_maps:
+            return
+            
+        for t_val in t_points:
+            cache_file = cache_dir / f"frame_{t_val:03d}.jpg"
+            if not cache_file.exists():
+                try:
+                    img_data = generate_population_frame_image(exp, film, t_val, cell_maps, files)
+                    if img_data is not None:
+                        with open(cache_file, "wb") as f:
+                            f.write(img_data)
+                except Exception as e:
+                    print(f"Error pre-generating frame {t_val} for {film}: {e}")
+    except Exception as e:
+        print(f"Error in background generation thread for {film}: {e}")
+    finally:
+        with PREGENERATION_LOCK:
+            RUNNING_PREGENERATIONS.discard((exp, film))
+
+def trigger_pregeneration_for_films(exp, films):
+    with PREGENERATION_LOCK:
+        for film in films:
+            key = (exp, film)
+            if key not in RUNNING_PREGENERATIONS:
+                RUNNING_PREGENERATIONS.add(key)
+                t = threading.Thread(target=background_generate_population_frames, args=(exp, film))
+                t.daemon = True
+                t.start()
+
 # ==============================================================================
 # API Endpoints
 # ==============================================================================
+
 
 @app.route("/")
 def index():
@@ -2526,6 +2839,8 @@ def list_cells():
         sequence = request.args.get("sequence")
         data = get_sequence_linkage_data(exp)
         if sequence in data:
+            ensure_pseudo_sequence_cells(exp, sequence, data)
+            trigger_pregeneration_for_films(exp, data[sequence]["films"])
             def get_sort_key(k):
                 s = str(k)
                 m = re.search(r"(\d+)$", s)
@@ -2581,6 +2896,7 @@ def list_cells():
         return jsonify({"cells": [], "lineage": {}})
         
     film = request.args.get("film")
+    trigger_pregeneration_for_films(exp, [film])
     tracked_dir = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}"
     
     cells = []
@@ -2606,6 +2922,8 @@ def cell_masks():
         if sequence not in data:
             return jsonify({"error": "Sequence not found"}), 404
             
+        ensure_pseudo_sequence_cells(exp, sequence, data)
+        trigger_pregeneration_for_films(exp, data[sequence]["films"])
         films = data[sequence]["films"]
         local_ids = data[sequence]["global_cells"].get(cell_id, [-1]*len(films))
         
@@ -2663,6 +2981,7 @@ def cell_masks():
         
     else:
         film = request.args.get("film")
+        trigger_pregeneration_for_films(exp, [film])
         csv_path = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}" / f"cell_{cell_id}_masks.csv"
         df = pd.read_csv(csv_path)
         
@@ -2754,9 +3073,9 @@ def identify_cell():
     # If no tracked cell is found, check the raw segmentation mask
     try:
         masks_dir = BASE_MOVIE_ROOT / exp / film / f"Masks_{film}"
-        files = sorted(list(masks_dir.glob(f"{film}_t_{t:03d}_c_*_seg.tif")))
+        files = sorted([f for f in masks_dir.glob(f"{film}_t_{t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
         if not files:
-            files = sorted(list(masks_dir.glob(f"*_t_{t:03d}_c_*_seg.tif")))
+            files = sorted([f for f in masks_dir.glob(f"*_t_{t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
         if files:
             from Cell_tracking_functions import load_segmentation
             from skimage.measure import label
@@ -2785,6 +3104,140 @@ def get_qc():
         with open(qc_file, 'r') as f:
             return jsonify({"status": "success", "qc": json.load(f)})
     return jsonify({"status": "success", "qc": {}})
+
+@app.route("/api/suspicious_cells")
+def suspicious_cells():
+    exp = request.args.get("experiment")
+    sequence = request.args.get("sequence")
+    film = request.args.get("film")
+    threshold = float(request.args.get("threshold", 15.0))
+    
+    target = sequence if sequence else film
+    cache_key = f"{exp}::{target}::thresh_{threshold}"
+    
+    if cache_key in SUSPICIOUS_CACHE:
+        return jsonify({"suspicious": SUSPICIOUS_CACHE[cache_key]})
+        
+    # Check disk cache
+    target_dir = BASE_MOVIE_ROOT / exp / target
+    cache_file = target_dir / f"suspicious_{target}.json"
+    if cache_file.exists():
+        try:
+            import json
+            with open(cache_file, "r") as f:
+                disk_data = json.load(f)
+                SUSPICIOUS_CACHE[cache_key] = disk_data
+                return jsonify({"suspicious": disk_data})
+        except Exception as e:
+            print(f"Error reading disk cache: {e}")
+            
+    suspicious_data = {}
+    
+    if sequence:
+        seq_data = get_sequence_linkage_data(exp)
+        if sequence not in seq_data:
+            return jsonify({"suspicious": {}})
+        ensure_pseudo_sequence_cells(exp, sequence, seq_data)
+        films = seq_data[sequence]["films"]
+        cell_mappings = seq_data[sequence]["global_cells"]
+    else:
+        films = [film]
+        tracked_dir = BASE_MOVIE_ROOT / exp / film / f"TrackedCells_{film}"
+        cell_mappings = {}
+        if tracked_dir.is_dir():
+            for f in tracked_dir.iterdir():
+                if f.name.startswith("."):
+                    continue
+                m = re.match(r"^cell_(\d+)_masks\.csv$", f.name)
+                if m:
+                    cid = m.group(1)
+                    cell_mappings[cid] = [int(cid)]
+                    
+    for cell_id, local_ids in cell_mappings.items():
+        film_dfs = []
+        
+        for i, f_name in enumerate(films):
+            local_id = local_ids[i] if i < len(local_ids) else -1
+            if local_id == -1:
+                film_dfs.append(None)
+                continue
+            csv_path = BASE_MOVIE_ROOT / exp / f_name / f"TrackedCells_{f_name}" / f"cell_{local_id}_masks.csv"
+            if csv_path.exists():
+                try:
+                    df = pd.read_csv(csv_path)
+                    film_dfs.append(df)
+                except Exception:
+                    film_dfs.append(None)
+            else:
+                film_dfs.append(None)
+                
+        all_rles = []
+        H, W = 0, 0
+        for i, df in enumerate(film_dfs):
+            f_name = films[i]
+            L, fW, fH = get_film_frame_count_and_size(exp, f_name)
+            if df is not None and len(df) > 0:
+                if H == 0:
+                    H, W = int(df.iloc[0]['height']), int(df.iloc[0]['width'])
+                
+                # Determine rle_col for this dataframe
+                rle_col = 'rle_bf'
+                if 'rle_gfp' in df.columns and any(isinstance(x, str) and x.strip() for x in df['rle_gfp'].dropna()):
+                    rle_col = 'rle_gfp'
+                elif 'rle_bf' not in df.columns and 'rle_gfp' in df.columns:
+                    rle_col = 'rle_gfp'
+                    
+                masks = df[rle_col].fillna("").tolist()
+                if len(masks) < L:
+                    masks.extend([""] * (L - len(masks)))
+                elif len(masks) > L:
+                    masks = masks[:L]
+                all_rles.extend(masks)
+            else:
+                all_rles.extend([""] * L)
+                
+        if H == 0 or W == 0:
+            continue
+            
+        centroids = []
+        for rle in all_rles:
+            if not isinstance(rle, str) or not rle.strip() or rle == "nan":
+                centroids.append(None)
+                continue
+            try:
+                mask = rle_decode(rle, (H, W))
+                if not mask.any():
+                    centroids.append(None)
+                else:
+                    ys, xs = np.nonzero(mask)
+                    centroids.append((float(np.mean(ys)), float(np.mean(xs))))
+            except Exception:
+                centroids.append(None)
+                
+        suspicious_frames = []
+        for t in range(1, len(centroids)):
+            c1 = centroids[t-1]
+            c2 = centroids[t]
+            if c1 is not None and c2 is not None:
+                dist = np.sqrt((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2)
+                if dist > threshold:
+                    suspicious_frames.append(t)
+                    
+        if suspicious_frames:
+            suspicious_data[str(cell_id)] = suspicious_frames
+            
+    SUSPICIOUS_CACHE[cache_key] = suspicious_data
+    
+    # Save to disk cache
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        import json
+        with open(cache_file, "w") as f:
+            json.dump(suspicious_data, f)
+    except Exception as e:
+        print(f"Error writing disk cache: {e}")
+        
+    return jsonify({"suspicious": suspicious_data})
 
 @app.route('/api/save_qc', methods=['POST'])
 def save_qc():
@@ -2952,13 +3405,13 @@ def get_inference_runner(exp):
 def get_cell_crop_tile(exp, film, t, rle, pad=10, tile_size=96):
     try:
         frames_dir = BASE_MOVIE_ROOT / exp / film / f"Frames_{film}"
-        files = sorted(list(frames_dir.glob(f"{film}_t_{t:03d}_c_0.tif")))
+        files = sorted([f for f in frames_dir.glob(f"{film}_t_{t:03d}_c_0.tif") if not f.name.startswith(".")])
         if not files:
-            files = sorted(list(frames_dir.glob(f"*_t_{t:03d}_c_0.tif")))
+            files = sorted([f for f in frames_dir.glob(f"*_t_{t:03d}_c_0.tif") if not f.name.startswith(".")])
         if not files:
-            files = sorted(list(frames_dir.glob(f"{film}_t_{t:03d}_c_*.tif")))
+            files = sorted([f for f in frames_dir.glob(f"{film}_t_{t:03d}_c_*.tif") if not f.name.startswith(".")])
             if not files:
-                files = sorted(list(frames_dir.glob(f"*_t_{t:03d}_c_*.tif")))
+                files = sorted([f for f in frames_dir.glob(f"*_t_{t:03d}_c_*.tif") if not f.name.startswith(".")])
                 
         if not files:
             return None
@@ -3275,9 +3728,9 @@ def frame_boundaries():
     exp = request.args.get("experiment")
     
     masks_dir = BASE_MOVIE_ROOT / exp / film / f"Masks_{film}"
-    files = sorted(list(masks_dir.glob(f"{film}_t_{local_t:03d}_c_*_seg.tif")))
+    files = sorted([f for f in masks_dir.glob(f"{film}_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
     if not files:
-        files = sorted(list(masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif")))
+        files = sorted([f for f in masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
         
     if not files:
         return jsonify({"error": "No segment file found"}), 404
@@ -3339,9 +3792,9 @@ def frame_image():
     exp = request.args.get("experiment")
     
     frames_dir = BASE_MOVIE_ROOT / exp / film / f"Frames_{film}"
-    files = sorted(list(frames_dir.glob(f"{film}_t_{local_t:03d}_c_*.tif")))
+    files = sorted([f for f in frames_dir.glob(f"{film}_t_{local_t:03d}_c_*.tif") if not f.name.startswith(".")])
     if not files:
-        files = sorted(list(frames_dir.glob(f"*_t_{local_t:03d}_c_*.tif")))
+        files = sorted([f for f in frames_dir.glob(f"*_t_{local_t:03d}_c_*.tif") if not f.name.startswith(".")])
         
     if not files:
         return jsonify({"error": f"Frame image not found"}), 404
@@ -3393,8 +3846,8 @@ def frame_crop():
                             cy, cx = int(np.mean(ys)), int(np.mean(xs))
                         
             frames_dir = BASE_MOVIE_ROOT / exp / film / f"Frames_{film}"
-            files = sorted(list(frames_dir.glob(f"{film}_t_{local_t:03d}_c_*.tif")))
-            if not files: files = sorted(list(frames_dir.glob(f"*_t_{local_t:03d}_c_*.tif")))
+            files = sorted([f for f in frames_dir.glob(f"{film}_t_{local_t:03d}_c_*.tif") if not f.name.startswith(".")])
+            if not files: files = sorted([f for f in frames_dir.glob(f"*_t_{local_t:03d}_c_*.tif") if not f.name.startswith(".")])
             if files:
                 img = imread(str(files[0]))
                 crop_size = 100
@@ -3415,6 +3868,30 @@ def frame_crop():
     img_io.seek(0)
     return send_file(img_io, mimetype='image/jpeg')
 
+@app.route("/api/population_frame")
+def population_frame():
+    film, _, local_t = get_actual_film_and_t(request.args)
+    exp = request.args.get("experiment")
+    
+    cache_dir = BASE_MOVIE_ROOT / exp / film / f"PopulationFrames_{film}"
+    cache_file = cache_dir / f"frame_{local_t:03d}.jpg"
+    
+    if cache_file.exists():
+        return send_file(str(cache_file), mimetype='image/jpeg')
+        
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        img_data = generate_population_frame_image(exp, film, local_t)
+        if img_data is not None:
+            with open(cache_file, "wb") as f:
+                f.write(img_data)
+            img_io = BytesIO(img_data)
+            return send_file(img_io, mimetype='image/jpeg')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+    return jsonify({"error": "Failed to generate population frame"}), 404
+
 @app.route("/api/click_segment", methods=["POST"])
 def click_segment():
     data = request.json
@@ -3433,8 +3910,8 @@ def click_segment():
         return jsonify({"status": "error", "message": "Cannot select segment for an unassigned cell mapping."})
         
     masks_dir = BASE_MOVIE_ROOT / exp / film / f"Masks_{film}"
-    files = sorted(list(masks_dir.glob(f"{film}_t_{local_t:03d}_c_*_seg.tif")))
-    if not files: files = sorted(list(masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif")))
+    files = sorted([f for f in masks_dir.glob(f"{film}_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
+    if not files: files = sorted([f for f in masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
     if not files: return jsonify({"status": "error", "message": "Segmentation file not found"}), 404
         
     seg = load_segmentation(str(files[0]))
@@ -3457,9 +3934,118 @@ def save_masks():
     channel = data.get("channel", "bf")
     new_masks = data.get("masks")
     
+    # Partial update of suspicious cells cache
+    seq = data.get("sequence")
+    film_param = data.get("film")
+    target = seq if seq else film_param
+    if exp and target and cell_id:
+        try:
+            target_dir = BASE_MOVIE_ROOT / exp / target
+            cache_file = target_dir / f"suspicious_{target}.json"
+            
+            disk_data = {}
+            if cache_file.exists():
+                import json
+                with open(cache_file, "r") as f:
+                    disk_data = json.load(f)
+                    
+            if seq:
+                seq_data = get_sequence_linkage_data(exp)
+                ensure_pseudo_sequence_cells(exp, seq, seq_data)
+                films = seq_data[seq]["films"]
+                local_ids = seq_data[seq]["global_cells"].get(str(cell_id), [-1]*len(films))
+            else:
+                films = [film_param]
+                local_ids = [int(cell_id)]
+                
+            film_dfs = []
+            for i, f_name in enumerate(films):
+                local_id = local_ids[i] if i < len(local_ids) else -1
+                if local_id == -1:
+                    film_dfs.append(None)
+                    continue
+                csv_path = BASE_MOVIE_ROOT / exp / f_name / f"TrackedCells_{f_name}" / f"cell_{local_id}_masks.csv"
+                if csv_path.exists():
+                    try:
+                        df = pd.read_csv(csv_path)
+                        film_dfs.append(df)
+                    except Exception:
+                        film_dfs.append(None)
+                else:
+                    film_dfs.append(None)
+                    
+            all_rles = []
+            H, W = 0, 0
+            for i, df in enumerate(film_dfs):
+                f_name = films[i]
+                L, fW, fH = get_film_frame_count_and_size(exp, f_name)
+                if df is not None and len(df) > 0:
+                    if H == 0:
+                        H, W = int(df.iloc[0]['height']), int(df.iloc[0]['width'])
+                    
+                    rle_col = 'rle_bf'
+                    if 'rle_gfp' in df.columns and any(isinstance(x, str) and x.strip() for x in df['rle_gfp'].dropna()):
+                        rle_col = 'rle_gfp'
+                    elif 'rle_bf' not in df.columns and 'rle_gfp' in df.columns:
+                        rle_col = 'rle_gfp'
+                        
+                    masks = df[rle_col].fillna("").tolist()
+                    if len(masks) < L:
+                        masks.extend([""] * (L - len(masks)))
+                    elif len(masks) > L:
+                        masks = masks[:L]
+                    all_rles.extend(masks)
+                else:
+                    all_rles.extend([""] * L)
+                    
+            if H > 0 and W > 0:
+                centroids = []
+                for rle in all_rles:
+                    if not isinstance(rle, str) or not rle.strip() or rle == "nan":
+                        centroids.append(None)
+                        continue
+                    try:
+                        mask = rle_decode(rle, (H, W))
+                        if not mask.any():
+                            centroids.append(None)
+                        else:
+                            ys, xs = np.nonzero(mask)
+                            centroids.append((float(np.mean(ys)), float(np.mean(xs))))
+                    except Exception:
+                        centroids.append(None)
+                        
+                susp_frames = []
+                threshold = 15.0
+                for t in range(1, len(centroids)):
+                    c1 = centroids[t-1]
+                    c2 = centroids[t]
+                    if c1 is not None and c2 is not None:
+                        dist = np.sqrt((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2)
+                        if dist > threshold:
+                            susp_frames.append(t)
+                            
+                if susp_frames:
+                    disk_data[str(cell_id)] = susp_frames
+                else:
+                    if str(cell_id) in disk_data:
+                        del disk_data[str(cell_id)]
+                        
+            target_dir.mkdir(parents=True, exist_ok=True)
+            import json
+            with open(cache_file, "w") as f:
+                json.dump(disk_data, f)
+                
+            for k in list(SUSPICIOUS_CACHE.keys()):
+                if k.startswith(f"{exp}::{target}"):
+                    SUSPICIOUS_CACHE[k] = disk_data
+                    
+        except Exception as e:
+            print(f"Error updating suspicious cache: {e}")
+    
     if "sequence" in data:
         seq = data.get("sequence")
         seq_data = get_sequence_linkage_data(exp)
+        ensure_pseudo_sequence_cells(exp, seq, seq_data)
         films = seq_data[seq]["films"]
         local_ids = seq_data[seq]["global_cells"][cell_id]
         
@@ -3493,12 +4079,16 @@ def save_masks():
                     elif len(df) < len(film_masks):
                         film_masks = film_masks[:len(df)]
                         
+                    any_modified = False
+                    modified_t_indices = []
                     for t in range(len(df)):
                         old_rle = df.loc[t, rle_col] if pd.notna(df.loc[t, rle_col]) else ""
                         new_rle = film_masks[t] if film_masks[t] is not None else ""
                         if old_rle != new_rle:
                             df.loc[t, rle_col] = new_rle
                             df.loc[t, source_col] = "manual"
+                            any_modified = True
+                            modified_t_indices.append(t)
                             
                         rle = film_masks[t]
                         H, W = int(df.iloc[t]['height']), int(df.iloc[t]['width'])
@@ -3510,6 +4100,16 @@ def save_masks():
                         if area_col in df.columns: df.loc[t, area_col] = area
                     df.to_csv(csv_path, index=False)
                     
+                    if any_modified:
+                        for t_idx in modified_t_indices:
+                            cache_dir = BASE_MOVIE_ROOT / exp / f_name / f"PopulationFrames_{f_name}"
+                            cache_file = cache_dir / f"frame_{t_idx:03d}.jpg"
+                            if cache_file.exists():
+                                try:
+                                    cache_file.unlink()
+                                except Exception:
+                                    pass
+                            
             current_t += L
             
     else:
@@ -3532,6 +4132,8 @@ def save_masks():
         if source_col not in df.columns:
             df[source_col] = ""
         
+        any_modified = False
+        modified_t_indices = []
         for t in range(len(df)):
             if t < len(new_masks):
                 old_rle = df.loc[t, rle_col] if pd.notna(df.loc[t, rle_col]) else ""
@@ -3539,6 +4141,8 @@ def save_masks():
                 if old_rle != new_rle:
                     df.loc[t, rle_col] = new_rle
                     df.loc[t, source_col] = "manual"
+                    any_modified = True
+                    modified_t_indices.append(t)
                 
                 rle = new_masks[t]
                 H, W = int(df.iloc[t]['height']), int(df.iloc[t]['width'])
@@ -3549,6 +4153,16 @@ def save_masks():
                     area = 0
                 if area_col in df.columns: df.loc[t, area_col] = area
         df.to_csv(csv_path, index=False)
+        
+        if any_modified:
+            for t_idx in modified_t_indices:
+                cache_dir = BASE_MOVIE_ROOT / exp / film / f"PopulationFrames_{film}"
+                cache_file = cache_dir / f"frame_{t_idx:03d}.jpg"
+                if cache_file.exists():
+                    try:
+                        cache_file.unlink()
+                    except Exception:
+                        pass
         
     return jsonify({"status": "success"})
 @app.route("/api/auto_fix_segments", methods=["POST"])
@@ -3611,8 +4225,8 @@ def auto_fix_segments():
             continue
             
         masks_dir = BASE_MOVIE_ROOT / exp / film / f"Masks_{film}"
-        files = sorted(list(masks_dir.glob(f"{film}_t_{local_t:03d}_c_*_seg.tif")))
-        if not files: files = sorted(list(masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif")))
+        files = sorted([f for f in masks_dir.glob(f"{film}_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
+        if not files: files = sorted([f for f in masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
         if not files:
             continue
             

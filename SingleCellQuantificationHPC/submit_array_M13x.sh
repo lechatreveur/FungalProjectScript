@@ -32,9 +32,9 @@ fi
 
 get_track_channel() {
     local name="$1"
-    if [[ "$name" == *"YES_Scd1_D_1"* || "$name" == *"YES_Scd1_D_3"* || "$name" == *"YES_Scd1_D_5"* || "$name" == "YES_Scd1_D_F"* ]]; then
+    if [[ "$name" == *"YES_Scd1_D_1"* || "$name" == *"YES_Scd1_D_3"* || "$name" == *"YES_Scd1_D_5"* ]]; then
         echo "bf"
-    elif [[ "$name" == *"YES_Scd1_D_2"* || "$name" == *"YES_Scd1_D_4"* ]]; then
+    elif [[ "$name" == *"YES_Scd1_D_2"* || "$name" == *"YES_Scd1_D_4"* || "$name" == "YES_Scd1_D_F"* ]]; then
         echo "gfp"
     elif [[ "$name" == *"_BF"* ]]; then
         echo "bf"

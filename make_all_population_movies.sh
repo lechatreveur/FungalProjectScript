@@ -55,7 +55,7 @@ for MOVIE in "$@"; do
         --cells_dir "$cells_dir" \
         --out "$out_file" \
         --fps "$FPS" \
-        --alpha "$ALPHA"
+        --alpha "$ALPHA" || echo "⚠️ Warning: Failed to generate population movie for ${movie_name}!"
     done
 done
 

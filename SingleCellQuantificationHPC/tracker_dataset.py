@@ -53,7 +53,7 @@ CROP_SIZE  = 128   # pixels – all crops resized to this
 TOPK_NEG   = 4     # how many negative candidates to include per sample
 TILE_SIZE  = 96    # for FungalInferenceCore strip (must match training)
 SEPTUM_MODEL_PATH = (
-    "/Volumes/X10 Pro/Movies/2025_12_31_M92/"
+    "/Volumes/X10 Pro/Movies/2026_01_08_M93/"
     "training_dataset/checkpoints_binary/model_best.pt"
 )
 

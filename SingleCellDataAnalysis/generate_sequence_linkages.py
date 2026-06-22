@@ -16,6 +16,21 @@ BASE_MOVIE_ROOT = Path("/Volumes/X10 Pro/Movies")
 def get_sequence_films(exp_dir):
     films = [d.name for d in exp_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
     
+    # Custom grouping logic for 2025_09_17
+    if "2025_09_17" in str(exp_dir):
+        seq_groups = {}
+        for field in ["F0", "F1"]:
+            ordered = [
+                f"A14_1TP1_{field}",
+                f"A14_1TP1_BF_{field}",
+                f"A14_1TP2_{field}",
+                f"A14_1TP2_BF_{field}"
+            ]
+            actual_ordered = [f for f in ordered if f in films]
+            if len(actual_ordered) > 1:
+                seq_groups[field] = actual_ordered
+        return seq_groups
+
     # Custom grouping logic for M93
     if "M93" in str(exp_dir):
         fields = set()
@@ -132,6 +147,31 @@ def get_sequence_films(exp_dir):
                 seq_groups[group_name] = actual_ordered
         return seq_groups
         
+    # Custom grouping logic for M143
+    if "M143" in str(exp_dir):
+        fields = set()
+        for f in films:
+            m = re.search(r'_(F\d+)$', f)
+            if m:
+                fields.add(m.group(1))
+                
+        seq_groups = {}
+        for field in fields:
+            for strain in ["Scd1S573A", "Scd1S573D"]:
+                group_name = f"{strain}_{field}"
+                ordered = [
+                    f"{strain}_{field}",
+                    f"{strain}_1_{field}",
+                    f"{strain}_2_{field}",
+                    f"{strain}_3_{field}",
+                    f"{strain}_4_{field}",
+                    f"{strain}_5_{field}"
+                ]
+                actual_ordered = [f for f in ordered if f in films]
+                if len(actual_ordered) > 1:
+                    seq_groups[group_name] = actual_ordered
+        return seq_groups
+
     # Custom grouping logic for M133
     if "M133" in str(exp_dir):
         fields = set()
@@ -315,9 +355,11 @@ def generate_linkages(exp_name):
     print(f"Saved {out_file}")
 
 if __name__ == "__main__":
+    generate_linkages("2025_09_17")
     generate_linkages("2025_12_31_M92")
     generate_linkages("2026_01_16_M96")
     generate_linkages("2026_01_18_M97")
     generate_linkages("2026_04_23_M130")
     generate_linkages("2026_04_29_M133")
     generate_linkages("2026_04_30_M135")
+    generate_linkages("2026_06_03_M143")

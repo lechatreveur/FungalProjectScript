@@ -31,6 +31,14 @@ def to_gray(img: np.ndarray) -> np.ndarray:
     # If somehow multi-channel, convert for alignment only
     return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+def prepare_mask_for_ecc(mask_path: Path) -> np.ndarray:
+    mask = read_tiff_any(mask_path)
+    # Convert to binary float32 (0.0 or 255.0)
+    binary = (mask > 0).astype(np.float32) * 255.0
+    # Apply Gaussian blur to create smooth gradients for ECC optimization
+    blurred = cv2.GaussianBlur(binary, (9, 9), 2.0)
+    return blurred
+
 def safe_replace(out_tmp: Path, out_final: Path):
     # Replace atomically when possible
     out_tmp.replace(out_final)
@@ -43,8 +51,9 @@ def ecc_translation_warp(template_f32: np.ndarray, current_f32: np.ndarray,
     # ECC returns warp that aligns current -> template; use WARP_INVERSE_MAP when warping
     try:
         _, warp = cv2.findTransformECC(template_f32, current_f32, warp, cv2.MOTION_TRANSLATION, criteria)
-    except cv2.error:
+    except cv2.error as e:
         # If ECC fails on a frame, fall back to identity (no correction)
+        print(f"  [WARNING] ECC failed, using identity warp. Error: {e}")
         warp = np.eye(2, 3, dtype=np.float32)
     return warp
 
@@ -57,7 +66,7 @@ def warp_image(img: np.ndarray, warp: np.ndarray, size_wh, interp, border_mode, 
         borderValue=border_value
     )
 
-def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float):
+def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float, align_by_masks: bool = False):
     frames_dirs = [p for p in film_dir.iterdir() if p.is_dir() and p.name.startswith("Frames_")]
     masks_dirs  = [p for p in film_dir.iterdir() if p.is_dir() and p.name.startswith("Masks_")]
 
@@ -73,21 +82,48 @@ def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float):
     if not frame_files:
         return 0
 
-    # Template = first frame (grayscale float32)
-    first = read_tiff_any(frame_files[0])
-    first_gray = to_gray(first).astype(np.float32)
-    h, w = first_gray.shape[:2]
+    if align_by_masks and not masks_dir:
+        print(f"[WARNING] align_by_masks requested but no Masks_* directory found in {film_dir}. Falling back to BF frames.")
+        align_by_masks = False
 
+    # Template for alignment
+    if align_by_masks:
+        first_mask_name = frame_files[0].stem + "_seg.tif"
+        first_mask_path = masks_dir / first_mask_name
+        if not first_mask_path.exists():
+            raise RuntimeError(f"First mask not found: {first_mask_path}")
+        first_align = prepare_mask_for_ecc(first_mask_path)
+    else:
+        first = read_tiff_any(frame_files[0])
+        first_align = to_gray(first).astype(np.float32)
+
+    h, w = first_align.shape[:2]
     changed = 0
 
     for fpath in frame_files:
         img = read_tiff_any(fpath)
-        gray_f32 = to_gray(img).astype(np.float32)
+        
+        # Determine current alignment image
+        mpath = None
+        if masks_dir:
+            mask_name = fpath.stem + "_seg.tif"
+            mpath = masks_dir / mask_name
 
-        if gray_f32.shape[:2] != (h, w):
-            raise RuntimeError(f"Shape mismatch in {fpath}: got {gray_f32.shape[:2]}, expected {(h,w)}")
+        if align_by_masks:
+            if mpath and mpath.exists():
+                curr_align = prepare_mask_for_ecc(mpath)
+            else:
+                raise RuntimeError(f"Mask not found for {fpath.name}")
+        else:
+            curr_align = to_gray(img).astype(np.float32)
 
-        warp = ecc_translation_warp(first_gray, gray_f32, max_iters=max_iters, eps=eps)
+        if curr_align.shape[:2] != (h, w):
+            raise RuntimeError(f"Shape mismatch in alignment image for {fpath}: got {curr_align.shape[:2]}, expected {(h,w)}")
+
+        warp = ecc_translation_warp(first_align, curr_align, max_iters=max_iters, eps=eps)
+        tx = warp[0, 2]
+        ty = warp[1, 2]
+        print(f"  {fpath.name}: dx={tx:.3f}, dy={ty:.3f}")
 
         # Warp frame
         stabilized_frame = warp_image(
@@ -97,20 +133,16 @@ def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float):
         )
 
         # Corresponding mask (Optional)
-        mpath = None
         stabilized_mask = None
-        if masks_dir:
-            mask_name = fpath.stem + "_seg.tif"
-            mpath = masks_dir / mask_name
-            if mpath.exists():
-                mask = read_tiff_any(mpath)
-                # Warp mask with nearest neighbor, pad with 0
-                stabilized_mask = warp_image(
-                    mask, warp, (w, h),
-                    interp=cv2.INTER_NEAREST,
-                    border_mode=cv2.BORDER_CONSTANT,
-                    border_value=0
-                )
+        if mpath and mpath.exists():
+            mask = read_tiff_any(mpath)
+            # Warp mask with nearest neighbor, pad with 0
+            stabilized_mask = warp_image(
+                mask, warp, (w, h),
+                interp=cv2.INTER_NEAREST,
+                border_mode=cv2.BORDER_CONSTANT,
+                border_value=0
+            )
 
         if dry_run:
             print(f"[DRY RUN] Would overwrite: {fpath}")
@@ -140,25 +172,35 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="Print what would be changed, but do not overwrite files.")
     ap.add_argument("--max-iters", type=int, default=200, help="ECC max iterations.")
     ap.add_argument("--eps", type=float, default=1e-6, help="ECC convergence epsilon.")
+    ap.add_argument("--align-by-masks", action="store_true", help="Align images based on segmentations/masks instead of BF images.")
     args = ap.parse_args()
 
     wd = Path(args.working_dir)
     if not wd.exists():
         raise FileNotFoundError(wd)
 
-    # Each film is a subfolder inside working_dir
-    film_dirs = sorted([p for p in wd.iterdir() if p.is_dir()])
+    # Check if wd itself is a film directory containing a Frames_* folder
+    if any(p.name.startswith("Frames_") for p in wd.iterdir() if p.is_dir()):
+        film_dirs = [wd]
+    else:
+        # Each film is a subfolder inside working_dir
+        film_dirs = sorted([p for p in wd.iterdir() if p.is_dir()])
 
     total = 0
     for film_dir in film_dirs:
+        # Skip directories like done_movies, population_movies, etc.
+        if film_dir.name in ["done_movies", "population_movies"]:
+            continue
         try:
-            n = stabilize_film(film_dir, dry_run=args.dry_run, max_iters=args.max_iters, eps=args.eps)
+            print(f"Processing film directory: {film_dir.name}")
+            n = stabilize_film(film_dir, dry_run=args.dry_run, max_iters=args.max_iters, eps=args.eps, align_by_masks=args.align_by_masks)
             if n > 0:
-                print(f"{film_dir.name}: stabilized {n} frames (+ masks)")
+                print(f"Finished {film_dir.name}: stabilized {n} frames (+ masks)")
             total += n
         except Exception as e:
-            print(f"[ERROR] {film_dir}: {e}")
-            # continue to next film
+            print(f"[ERROR] {film_dir.name}: {e}")
+            import traceback
+            traceback.print_exc()
 
     print(f"Done. Films processed: {len(film_dirs)}. Frames stabilized: {total}.")
     if args.dry_run:

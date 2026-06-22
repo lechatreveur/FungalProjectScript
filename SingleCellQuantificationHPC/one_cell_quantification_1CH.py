@@ -39,7 +39,6 @@ from quant_helpers import (
 )
 
 from bf_pattern import bf_pattern_only
-from xcorr_utils import xcorr_best_of_six, save_xcorr_debug_figure
 
 
 # =========================
@@ -58,24 +57,6 @@ parser.add_argument('--min_area', type=int, default=2500, help="Minimum area thr
 parser.add_argument('--update_existing', action='store_true', help="Only update existing rows (skip tracking if masks CSV is valid).")
 parser.add_argument('--seed_from_csv', action='store_true', help="Use the existing masks.csv at t=0 as the seed mask instead of searching seg.tif.")
 
-parser.add_argument('--xcorr_select',
-                    choices=['off', 'fallback', 'primary'],
-                    default='fallback',
-                    help='Use rotation-aware cross-correlation selector: off | fallback | primary.')
-
-parser.add_argument('--xcorr_fallback_ov',
-                    type=float, default=0.35,
-                    help='If overlap score < this threshold (or huge jump), switch to XCorr in fallback mode.')
-
-parser.add_argument('--xcorr_angle_pad', type=float, default=15.0,
-                    help='Angle sweep half-width in degrees for rotation-aware XCorr.')
-
-parser.add_argument('--xcorr_angle_step', type=float, default=3.0,
-                    help='Angle step in degrees for rotation-aware XCorr.')
-parser.add_argument('--xcorr_debug', action='store_true',
-                    help='Save per-frame debug figures for XCorr selection (PNG).')
-parser.add_argument('--use_ai_tracker', action='store_true',
-                    help='Use the Siamese AI Tracker instead of overlap logic.')
 parser.add_argument('--no_plot', action='store_true',
                     help='Skip plotting single cell crops.')
 
@@ -89,13 +70,7 @@ z_index         = args.z_index   # kept for compatibility (not used in filenames
 direction_mode  = args.direction
 update_existing = args.update_existing
 track_channel   = args.track_channel.lower()  # 'bf' or 'gfp'
-xcorr_mode       = args.xcorr_select
-xcorr_fallback_ov = args.xcorr_fallback_ov
-xcorr_angle_pad   = args.xcorr_angle_pad
-xcorr_angle_step  = args.xcorr_angle_step
-xcorr_debug = False
 do_plot = False
-use_ai_tracker = args.use_ai_tracker
 
 # =========================
 # Paths
@@ -103,11 +78,8 @@ use_ai_tracker = args.use_ai_tracker
 output_frames_folder        = os.path.join(working_dir, file_name, f"Frames_{file_name}")
 output_masks_folder         = os.path.join(working_dir, file_name, f"Masks_{file_name}")
 
-if use_ai_tracker:
-    output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}_AI")
-    direction_mode = 'forward' # AI tracker only runs forward
-else:
-    output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}")
+output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}")
+direction_mode = 'forward' # AI tracker only runs forward
 
 # No subfolders under Masks_<file_name> anymore
 os.makedirs(output_masks_folder, exist_ok=True)
@@ -120,12 +92,7 @@ cell_plot_folder_bf   = os.path.join(plot_output_root, f"cell_{cell_id}_BF")
 if do_plot:
     os.makedirs(plot_output_root, exist_ok=True)
 
-xcorr_debug_root = os.path.join(output_tracked_cells_folder, "xcorr_debug", f"cell_{cell_id}")
-xcorr_debug_dir_fwd = os.path.join(xcorr_debug_root, "forward")
-xcorr_debug_dir_bwd = os.path.join(xcorr_debug_root, "backward")
-if xcorr_debug:
-    os.makedirs(xcorr_debug_dir_fwd, exist_ok=True)
-    os.makedirs(xcorr_debug_dir_bwd, exist_ok=True)
+# xcorr debug removed
 
 
 # =========================
@@ -329,6 +296,7 @@ def _union_many_bboxes(bboxes, H, W, pad=0):
 # =========================
 # Tracking (single-channel)
 # =========================
+
 def track_one_direction(t_seq, ref_start_mask, channel='bf',
                         first_threshold=0.3, next_threshold=0.5,
                         area_lambda=0.35, ratio_soft=1.3, ratio_hard=1.8, topk=5,
@@ -537,8 +505,16 @@ def track_one_direction(t_seq, ref_start_mask, channel='bf',
 # =========================
 # Main
 # =========================
-if __name__ == "__main__":
+if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
     from pathlib import Path
+
+    # Early skip check to avoid expensive movie/frames discovery on skipped cells
+    masks_csv_path = Path(output_tracked_cells_folder) / f"cell_{cell_id}_masks.csv"
+    if not args.update_existing and masks_csv_path.is_file() and masks_csv_path.stat().st_size > 0:
+        print(f"[track] Skipping tracking: {masks_csv_path.name} exists and --update_existing not set (early check).")
+        if getattr(args, 'no_plot', False):
+            print(f"Skipping quantification/plotting for cell {cell_id} due to --no_plot.")
+            sys.exit(0)
 
     # Detect single channel index from masks and discover frames
     CH_IDX = _get_channel_index()
@@ -597,53 +573,34 @@ if __name__ == "__main__":
             initial_mask = (labeled_mask == cell_id)
 
         # 2) Tracking in detected channel only
-        if use_ai_tracker:
-            print("Loading AI Tracker Model...")
-            import torch
-            from tracker_model import load_tracker
-            from ai_tracking_inference import ai_track_one_direction
-            device = "cpu"
+        import torch
+        from tracker_model import load_tracker
+        from ai_tracking_inference import ai_track_one_direction
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        if track_channel == 'gfp':
+            ckpt_path = os.path.join(os.path.dirname(__file__), "tracker_checkpoints_m93_gfp", "model_latest.pt")
+            cache_key = 'one_cell_quantification_model_cache_gfp'
+        else:
             ckpt_path = os.path.join(os.path.dirname(__file__), "tracker_checkpoints", "model_latest.pt")
+            cache_key = 'one_cell_quantification_model_cache'
+
+        if cache_key in sys.modules:
+            model = sys.modules[cache_key]
+        else:
+            print(f"Loading AI Tracker Model ({track_channel}) from {ckpt_path}...")
             model = load_tracker(ckpt_path, device=device)
             model.eval()
-            print("Running AI Tracker inference...")
-            forward_sel = ai_track_one_direction(
-                t_seq=list(range(frame_number)),
-                ref_start_mask=initial_mask,
-                bf_frame_path_func=bf_frame_path,
-                lab_seg_path_func=_seg_path_any_ext,
-                model=model,
-                device=device
-            )
-            backward_sel = None
-        else:
-            xcfg_fwd = {
-                'fallback_overlap_thr': xcorr_fallback_ov,
-                'angle_pad_deg': xcorr_angle_pad,
-                'angle_step_deg': xcorr_angle_step,
-                'num_singles': 3, 'num_pairs': 3, 'pair_pool_k': 6, 'pad_px': 24,
-                'debug': xcorr_debug,
-                'debug_dir': xcorr_debug_dir_fwd,
-            }
-            
-            forward_sel = track_one_direction(
-                range(frame_number), initial_mask,
-                channel=track_channel, first_threshold=0.5, next_threshold=0.7, lock_first=False,
-                xcorr_mode=xcorr_mode, xcorr_cfg=xcfg_fwd
-            )
-            
-            backward_sel = None
-            
-            if direction_mode in ('backward', 'both'):
-                seed_mask_backward = forward_sel[frame_number - 1]["mask"]
-                xcfg_bwd = dict(xcfg_fwd, debug_dir=xcorr_debug_dir_bwd)
-                backward_sel = track_one_direction(
-                    range(frame_number - 1, -1, -1), seed_mask_backward,
-                    channel=track_channel, first_threshold=0.5, next_threshold=0.7,
-                    xcorr_mode=xcorr_mode, xcorr_cfg=xcfg_bwd
-                )
-
-
+            sys.modules[cache_key] = model
+        print("Running AI Tracker inference...")
+        forward_sel = ai_track_one_direction(
+            t_seq=list(range(frame_number)),
+            ref_start_mask=initial_mask,
+            bf_frame_path_func=bf_frame_path,
+            lab_seg_path_func=_seg_path_any_ext,
+            model=model,
+            device=device
+        )
+        backward_sel = None
 
         # 3) Reconcile per frame & save masks CSV (populate only selected channel columns)
         combined = []

@@ -65,6 +65,13 @@ FILM_FOLDER_MAP = {
     ('M93', 'GFP2', 'F2'): 'A14_FL_3_F2',
     # June25_20m: single GFP1/F0 → A14_10_20min
     ('June25_20m', 'GFP1', 'F0'): 'A14_10_20min',
+    # M133: GFP1 → YES_Scd1_D_2, GFP2 → YES_Scd1_D_4
+    ('M133', 'GFP1', 'F0'): 'YES_Scd1_D_2_F0',
+    ('M133', 'GFP1', 'F1'): 'YES_Scd1_D_2_F1',
+    ('M133', 'GFP1', 'F2'): 'YES_Scd1_D_2_F2',
+    ('M133', 'GFP2', 'F0'): 'YES_Scd1_D_4_F0',
+    ('M133', 'GFP2', 'F1'): 'YES_Scd1_D_4_F1',
+    ('M133', 'GFP2', 'F2'): 'YES_Scd1_D_4_F2',
 }
 
 EXPERIMENT_BASES = {
@@ -72,6 +79,7 @@ EXPERIMENT_BASES = {
     'M92':        '/Volumes/X10 Pro/Movies/2025_12_31_M92/',
     'M93':        '/Volumes/X10 Pro/Movies/2026_01_08_M93/',
     'June25_20m': '/Volumes/X10 Pro/Movies/2025_06_25/',
+    'M133':       '/Volumes/X10 Pro/Movies/2026_04_29_M133/',
 }
 
 STACKED_CSV_PATHS = {
@@ -79,6 +87,7 @@ STACKED_CSV_PATHS = {
     'M92':        '/Volumes/X10 Pro/Movies/2025_12_31_M92/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
     'M93':        '/Volumes/X10 Pro/Movies/2026_01_08_M93/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
     'June25_20m': '/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
+    'M133':       '/Volumes/X10 Pro/Movies/2026_04_29_M133/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
 }
 
 ID_MAP_CSV_PATHS = {
@@ -87,6 +96,7 @@ ID_MAP_CSV_PATHS = {
     'M92':    '/Volumes/X10 Pro/Movies/2025_12_31_M92/unaligned_pairs_quant/id_map_unaligned.csv',
     'M93':    '/Volumes/X10 Pro/Movies/2026_01_08_M93/unaligned_pairs_quant/id_map_unaligned.csv',
     'June25_20m': '/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/unaligned_pairs_quant/id_map_unaligned.csv',
+    'M133':       '/Volumes/X10 Pro/Movies/2026_04_29_M133/unaligned_pairs_quant/id_map_unaligned.csv',
 }
 
 

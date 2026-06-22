@@ -161,3 +161,25 @@
 2026-04-08 20:59:11,120 [INFO] [ep 039] train_loss=0.8448 val_loss=0.8241 val_acc_state=0.056
 2026-04-08 21:06:08,996 [INFO] [ep 040] train_loss=0.8328 val_loss=0.7190 val_acc_state=0.049
 2026-04-08 21:06:09,272 [INFO] Best val_loss=0.6471 → saved as model_best.pt
+2026-06-18 15:34:33,625 [INFO] [pos_weight] state=6.593 (neg/pos on train split)
+2026-06-18 15:35:42,344 [INFO] [ep 001] train_loss=1.3605 val_loss=1.0754 val_acc_state=0.012  [best]
+2026-06-18 15:37:17,243 [INFO] [ep 002] train_loss=1.3920 val_loss=1.0972 val_acc_state=0.012
+2026-06-18 15:39:20,371 [INFO] [ep 003] train_loss=1.3219 val_loss=1.1345 val_acc_state=0.013
+2026-06-18 15:40:54,094 [INFO] [ep 004] train_loss=1.3043 val_loss=0.9972 val_acc_state=0.032  [best]
+2026-06-18 15:43:11,676 [INFO] [ep 005] train_loss=1.3267 val_loss=1.1292 val_acc_state=0.020
+2026-06-18 15:44:45,201 [INFO] [ep 006] train_loss=1.2796 val_loss=0.9054 val_acc_state=0.054  [best]
+2026-06-18 15:46:23,615 [INFO] [ep 007] train_loss=1.2534 val_loss=0.8547 val_acc_state=0.066  [best]
+2026-06-18 15:48:14,087 [INFO] [ep 008] train_loss=1.2521 val_loss=1.0990 val_acc_state=0.029
+2026-06-18 15:49:26,546 [INFO] [ep 009] train_loss=1.2551 val_loss=0.9424 val_acc_state=0.049
+2026-06-18 15:51:04,110 [INFO] [ep 010] train_loss=1.3261 val_loss=1.5395 val_acc_state=0.018
+2026-06-18 15:52:20,586 [INFO] [ep 011] train_loss=1.2392 val_loss=1.0034 val_acc_state=0.033
+2026-06-18 15:53:41,594 [INFO] [ep 012] train_loss=1.1906 val_loss=0.8889 val_acc_state=0.061
+2026-06-18 15:55:04,366 [INFO] [ep 013] train_loss=1.1872 val_loss=0.8848 val_acc_state=0.057
+2026-06-18 15:56:33,204 [INFO] [ep 014] train_loss=1.2924 val_loss=1.1535 val_acc_state=0.023
+2026-06-18 15:58:01,559 [INFO] [ep 015] train_loss=1.1911 val_loss=1.1318 val_acc_state=0.025
+2026-06-18 15:59:24,514 [INFO] [ep 016] train_loss=1.2728 val_loss=1.2346 val_acc_state=0.023
+2026-06-18 16:01:18,997 [INFO] [ep 017] train_loss=1.1812 val_loss=0.9098 val_acc_state=0.063
+2026-06-18 16:03:02,732 [INFO] [ep 018] train_loss=1.2405 val_loss=1.6822 val_acc_state=0.013
+2026-06-18 16:04:40,510 [INFO] [ep 019] train_loss=1.1872 val_loss=1.0663 val_acc_state=0.031
+2026-06-18 16:06:04,525 [INFO] [ep 020] train_loss=1.1473 val_loss=0.8737 val_acc_state=0.050
+2026-06-18 16:06:04,578 [INFO] Best val_loss=0.8547 → saved as model_best.pt

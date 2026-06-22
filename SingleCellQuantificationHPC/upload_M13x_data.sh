@@ -1,21 +1,20 @@
 #!/bin/bash
 
-# Configuration
+if [ "$#" -eq 0 ]; then
+    echo "Usage: $0 <movie_folder_1> [<movie_folder_2> ...]"
+    echo "Example: $0 2026_06_03_M143"
+    exit 1
+fi
+
 REMOTE_USER="hsushen"
 REMOTE_HOST="172.20.97.21"
 REMOTE_BASE="/RAID1/working/R402/hsushen/FungalProject/Movies"
 LOCAL_BASE="/Volumes/X10 Pro/Movies"
 
-EXPERIMENTS=("2026_04_23_M130" "2026_04_29_M133" "2026_04_30_M135")
-
 echo "🚀 Starting upload of Frames and Masks to HPC..."
 
-for exp in "${EXPERIMENTS[@]}"; do
+for exp in "$@"; do
     echo "📁 Syncing experiment: $exp"
-    
-    # We want to sync all subdirectories containing Frames_ or Masks_
-    # Using --include and --exclude patterns to target exactly what we need
-    # This avoids syncing large raw files if they are already there
     
     rsync -avz --progress \
         --exclude="._*" \

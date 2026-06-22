@@ -75,8 +75,8 @@ def discover_frames(frames_dir: Path) -> List[Path]:
     candidates = []
     for ext in ("*.tif", "*.tiff", "*.png", "*.jpg", "*.jpeg", "*.bmp"):
         candidates.extend(frames_dir.glob(ext))
-    # Filter to those with "_t_<int>_" in name
-    frames = [p for p in candidates if find_time_from_name(p.name) is not None]
+    # Filter to those with "_t_<int>_" in name and not hidden
+    frames = [p for p in candidates if find_time_from_name(p.name) is not None and not p.name.startswith(".")]
     frames.sort(key=lambda p: find_time_from_name(p.name))
     return frames
 
@@ -568,7 +568,7 @@ def main():
         # fallback: build via glob pattern with {t} wildcard by scanning directory for all times
         # but we still need to find times; we will try any files and sort by time.
         candidates = list(frames_dir.glob(args.frame_glob.replace("{t}", "*")))
-        frames = [p for p in candidates if find_time_from_name(p.name) is not None]
+        frames = [p for p in candidates if find_time_from_name(p.name) is not None and not p.name.startswith(".")]
         frames.sort(key=lambda p: find_time_from_name(p.name))
 
     if not frames:
@@ -587,7 +587,7 @@ def main():
     log(f"Time range: {min(times)} .. {max(times)}")
 
     # Load cell mask files
-    cell_files = sorted([p for p in cells_dir.iterdir() if p.is_file() and "cell_" in p.name and "masks" in p.name])
+    cell_files = sorted([p for p in cells_dir.iterdir() if p.is_file() and "cell_" in p.name and "masks" in p.name and not p.name.startswith(".")])
     log(f"Found {len(cell_files)} cell mask files.")
 
     if args.cell_limit > 0:
