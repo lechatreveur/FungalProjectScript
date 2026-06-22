@@ -4102,13 +4102,20 @@ def save_masks():
                     
                     if any_modified:
                         for t_idx in modified_t_indices:
-                            cache_dir = BASE_MOVIE_ROOT / exp / f_name / f"PopulationFrames_{f_name}"
+                            cache_dir = BASE_MOVIE_ROOT / exp / film / f"PopulationFrames_{film}"
                             cache_file = cache_dir / f"frame_{t_idx:03d}.jpg"
                             if cache_file.exists():
                                 try:
                                     cache_file.unlink()
                                 except Exception:
                                     pass
+                            try:
+                                img_data = generate_population_frame_image(exp, film, t_idx)
+                                if img_data is not None:
+                                    with open(cache_file, "wb") as f:
+                                        f.write(img_data)
+                            except Exception:
+                                pass
                             
             current_t += L
             
@@ -4163,6 +4170,13 @@ def save_masks():
                         cache_file.unlink()
                     except Exception:
                         pass
+                try:
+                    img_data = generate_population_frame_image(exp, film, t_idx)
+                    if img_data is not None:
+                        with open(cache_file, "wb") as f:
+                            f.write(img_data)
+                except Exception:
+                    pass
         
     return jsonify({"status": "success"})
 @app.route("/api/auto_fix_segments", methods=["POST"])
@@ -4263,6 +4277,22 @@ def auto_fix_segments():
             area_col = 'area_bf' if rle_col == 'rle_bf' else 'area_gfp'
             if area_col in df.columns: df.loc[local_t, area_col] = int(new_mask.sum())
             fixed_count += 1
+            
+            # Invalidate and regenerate population cache frame
+            cache_dir = BASE_MOVIE_ROOT / exp / film / f"PopulationFrames_{film}"
+            cache_file = cache_dir / f"frame_{local_t:03d}.jpg"
+            if cache_file.exists():
+                try:
+                    cache_file.unlink()
+                except Exception:
+                    pass
+            try:
+                img_data = generate_population_frame_image(exp, film, local_t)
+                if img_data is not None:
+                    with open(cache_file, "wb") as f:
+                        f.write(img_data)
+            except Exception:
+                pass
             
     for csv_path, df in modified_dfs.items():
         df.to_csv(csv_path, index=False)
