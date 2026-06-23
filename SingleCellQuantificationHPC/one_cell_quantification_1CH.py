@@ -577,11 +577,30 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
         from tracker_model import load_tracker
         from ai_tracking_inference import ai_track_one_direction
         device = "mps" if torch.backends.mps.is_available() else "cpu"
+        # Resolve the base directory for checkpoints
+        # Candidates checked in order: local SSD, NAS, and fallback to script directory.
+        ai_dirs = [
+            "/Volumes/X10 Pro/Movies/AI",
+            "/Volumes/Movies/AI",
+            os.path.dirname(os.path.abspath(__file__))
+        ]
+        
+        base_ai_dir = None
+        for path in ai_dirs:
+            if os.path.isdir(path):
+                folder_name = "tracker_checkpoints_m93_gfp" if track_channel == 'gfp' else "tracker_checkpoints"
+                if os.path.isdir(os.path.join(path, folder_name)):
+                    base_ai_dir = path
+                    break
+        
+        if base_ai_dir is None:
+            base_ai_dir = os.path.dirname(os.path.abspath(__file__))
+            
         if track_channel == 'gfp':
-            ckpt_path = os.path.join(os.path.dirname(__file__), "tracker_checkpoints_m93_gfp", "model_latest.pt")
+            ckpt_path = os.path.join(base_ai_dir, "tracker_checkpoints_m93_gfp", "model_latest.pt")
             cache_key = 'one_cell_quantification_model_cache_gfp'
         else:
-            ckpt_path = os.path.join(os.path.dirname(__file__), "tracker_checkpoints", "model_latest.pt")
+            ckpt_path = os.path.join(base_ai_dir, "tracker_checkpoints", "model_latest.pt")
             cache_key = 'one_cell_quantification_model_cache'
 
         if cache_key in sys.modules:
