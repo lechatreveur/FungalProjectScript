@@ -581,6 +581,7 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
         # Candidates checked in order: local SSD, NAS, and fallback to script directory.
         ai_dirs = [
             "/Volumes/X10 Pro/Movies/AI",
+            "/X10 Pro/Movies/AI",
             "/Volumes/Movies/AI",
             os.path.dirname(os.path.abspath(__file__))
         ]
