@@ -3343,7 +3343,17 @@ def quantify_on_hpc():
         
         result = subprocess.run(local_cmd, shell=True, capture_output=True, text=True)
         if result.returncode != 0:
-            err_msg = (result.stderr or "").strip() or (result.stdout or "").strip() or f"Process exited with code {result.returncode}"
+            stderr_out = (result.stderr or "").strip()
+            stdout_out = (result.stdout or "").strip()
+            full_out = stderr_out if stderr_out else stdout_out
+            if not full_out:
+                err_msg = f"Process exited with code {result.returncode}"
+            else:
+                lines = full_out.splitlines()
+                if len(lines) > 15:
+                    err_msg = "[Truncated progress...]\n" + "\n".join(lines[-15:])
+                else:
+                    err_msg = full_out
             print(f"Quantification Error: {err_msg}")
             return jsonify({"status": "error", "message": f"Quantification Error: {err_msg}"})
             
