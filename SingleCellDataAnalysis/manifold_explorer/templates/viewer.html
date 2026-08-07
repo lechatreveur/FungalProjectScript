@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Fungal Multimodal Manifold Explorer</title>
+  <!-- STYLE_PLACEHOLDER -->
+</head>
+<body>
+  <div id="main">
+    <div id="toolbar">
+      <label>Dimension:
+      <select id="dim-select">
+        <option value="3D">3D UMAP</option>
+        <option value="2D">2D UMAP</option>
+        <option value="3D_latent">3D AE latent space</option>
+      </select>
+      </label>
+      
+      <label style="margin-left:8px; border-left:1px solid #475569; padding-left:12px;">Color by:
+      <select id="color-select">
+        <option value="Time Relative to Division (min)">Time Relative to Division (min)</option>
+        <option value="Cell Area (max, px&#178;)">Cell Area (max, px²)</option>
+        <option value="Cell Cycle Stage">Cell Cycle Stage</option>
+        <option value="Pol1 Mid Intensity">Pol1 Mid Intensity</option>
+        <option value="Pol2 Mid Intensity">Pol2 Mid Intensity</option>
+        <option value="Periodicity">Periodicity</option>
+        <option value="NC Score">NC Score</option>
+        <option value="Dynamic modes">Dynamic modes</option>
+      </select>
+      </label>
+      
+      <div id="thresholds-container" style="display: none; align-items: center; gap: 8px; margin-left: 8px; border-left: 1px solid #475569; padding-left: 12px;">
+        <label>pol1_mid:</label>
+        <input type="number" id="thresh-pol1-mid" value="4.04" step="0.01" style="width: 70px;">
+        <label>pol2_mid:</label>
+        <input type="number" id="thresh-pol2-mid" value="2.0" step="0.01" style="width: 70px;">
+        <label>mono_osc:</label>
+        <input type="number" id="thresh-mono-osc" value="5.0" step="0.1" style="width: 70px;">
+        <label>bi_osc:</label>
+        <input type="number" id="thresh-bi-osc" value="6.5" step="0.1" style="width: 70px;">
+      </div>
+      
+      <div id="link-pairs-container" style="display: none; align-items: center; gap: 6px; margin-left: 8px; border-left: 1px solid #475569; padding-left: 12px;">
+        <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <input type="checkbox" id="link-pairs-checkbox" style="cursor: pointer; width: 14px; height: 14px;">
+          Link pre-div pairs
+        </label>
+      </div>
+
+      <div id="color-range-container" style="display: flex; align-items: center; gap: 8px; margin-left: 8px; border-left: 1px solid #475569; padding-left: 12px;">
+        <label>Min Range:</label>
+        <input type="number" id="color-range-min" value="" step="0.1" style="width: 55px;">
+        <label>Max Range:</label>
+        <input type="number" id="color-range-max" value="" step="0.1" style="width: 55px;">
+      </div>
+    </div>
+    <div id="plot-div"></div>
+  </div>
+  <div id="sidebar">
+    <div id="content"><div class="placeholder">Click any point in the manifold to view its trajectory and features.</div></div>
+  </div>
+
+  <script>PLOTLY_JS_PLACEHOLDER</script>
+  <script>
+    var plotData3D = PLOT_JSON_3D_PLACEHOLDER;
+    var plotData2D = PLOT_JSON_2D_PLACEHOLDER;
+    var plotDataLatent = PLOT_JSON_LATENT_PLACEHOLDER;
+    var trajData = TRAJ_JSON_PLACEHOLDER;
+    var colorArrays = COLOR_ARRAYS_PLACEHOLDER;
+  </script>
+  <!-- SCRIPT_PLACEHOLDER -->
+</body>
+</html>

@@ -1,0 +1,61 @@
+output:
+  directory: "/Volumes/X10 Pro/FungalProject_Outputs/fc_ae_3d"
+  mode: "single-html"
+  filename: "fc_ae_3d_manifold_explorer_curated_Sept17.html"
+
+model:
+  path: "/Volumes/X10 Pro/FungalProject_Outputs/fc_ae_3d/fc_ae_3d_final.pth"
+  reference_experiment: "Sept17"
+  umap_seed: 42
+
+experiments:
+  Sept17:
+    root: "/Volumes/X10 Pro/Movies/2025_09_17"
+    stacked_csv: "/Volumes/X10 Pro/Movies/2025_09_17/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv"
+    id_map_csv: "/Volumes/X10 Pro/Movies/2025_09_17/unaligned_pairs_quant/id_map_unaligned.csv"
+    linkage_json: "/Volumes/X10 Pro/Movies/2025_09_17/sequence_linkage.json"
+    qc_jsons:
+      - "/Volumes/X10 Pro/Movies/2025_09_17/F0/qc_F0.json"
+      - "/Volumes/X10 Pro/Movies/2025_09_17/F1/qc_F1.json"
+    cycle_length_min: 300.0
+    reference: true
+    adapter_type: "sept17"
+    sources:
+      GFP1:
+        film_name: "A14_1TP1_{field}"
+        midpoint_min: 10.0
+        time_res_min: 0.2
+        start_time_min: 0.0
+      GFP2:
+        film_name: "A14_1TP2_{field}"
+        midpoint_min: 150.0
+        time_res_min: 0.2
+        start_time_min: 140.0
+
+  M133:
+    root: "/Volumes/X10 Pro/Movies/2026_04_29_M133"
+    stacked_csv: "/Volumes/X10 Pro/Movies/2026_04_29_M133/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv"
+    id_map_csv: "/Volumes/X10 Pro/Movies/2026_04_29_M133/unaligned_pairs_quant/id_map_unaligned.csv"
+    linkage_json: "/Volumes/X10 Pro/Movies/2026_04_29_M133/sequence_linkage.json"
+    qc_jsons:
+      - "/Volumes/X10 Pro/Movies/2026_04_29_M133/F0/qc_F0.json"
+      - "/Volumes/X10 Pro/Movies/2026_04_29_M133/F1/qc_F1.json"
+    cycle_length_min: 300.0
+    reference: false
+    adapter_type: "generic"
+    sources:
+      GFP1:
+        film_name: "A14_TP1_{field}"
+        midpoint_min: 10.0
+        time_res_min: 0.2
+        start_time_min: 0.0
+      GFP2:
+        film_name: "A14_TP2_{field}"
+        midpoint_min: 70.0
+        time_res_min: 0.5
+        start_time_min: 20.0
+      GFP3:
+        film_name: "A14_TP3_{field}"
+        midpoint_min: 130.0
+        time_res_min: 0.2
+        start_time_min: 60.0

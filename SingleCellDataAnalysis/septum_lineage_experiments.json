@@ -1,0 +1,54 @@
+{
+  "experiments": [
+    {
+      "id": "2025_09_17",
+      "root": "/Volumes/X10 Pro/Movies/2025_09_17",
+      "metadata_rules": [
+        {"film_pattern": "^A14_1TP1_F\\d+$", "metadata": "A14_1TP1_metadata.txt"},
+        {"film_pattern": "^A14_1TP1_BF_F\\d+$", "metadata": "A14_1TP1_BF_metadata.txt"},
+        {"film_pattern": "^A14_1TP2_F\\d+$", "metadata": "A14_1TP2_metadata.txt"},
+        {"film_pattern": "^A14_1TP2_BF_F\\d+$", "metadata": "A14_1TP2_BF_metadata.txt"}
+      ]
+    },
+    {
+      "id": "2026_04_29_M133",
+      "root": "/Volumes/X10 Pro/Movies/2026_04_29_M133",
+      "metadata_rules": [
+        {"film_pattern": "^YES_Scd1_D_F\\d+$", "metadata": "YES_Scd1_D_metadata.txt"},
+        {"film_pattern": "^YES_Scd1_D_1_F\\d+$", "metadata": "YES_Scd1_D_1_metadata.txt"},
+        {"film_pattern": "^YES_Scd1_D_2_F\\d+$", "metadata": "YES_Scd1_D_2_metadata.txt"},
+        {"film_pattern": "^YES_Scd1_D_3_F\\d+$", "metadata": "YES_Scd1_D_3_metadata.txt"},
+        {"film_pattern": "^YES_Scd1_D_4_F\\d+$", "metadata": "YES_Scd1_D_4_metadata.txt"},
+        {"film_pattern": "^YES_Scd1_D_5_F\\d+$", "metadata": "YES_Scd1_D_5_metadata.txt"}
+      ]
+    },
+    {
+      "id": "2026_04_30_M135",
+      "root": "/Volumes/X10 Pro/Movies/2026_04_30_M135",
+      "metadata_rules": [
+        {"film_pattern": "^A14_FL1_F\\d+$", "metadata": "A14_metadata.txt"},
+        {"film_pattern": "^A14_BF1_F\\d+$", "metadata": "A14_1_metadata.txt"},
+        {"film_pattern": "^A14_FL2_F\\d+$", "metadata": "A14_2_metadata.txt"},
+        {"film_pattern": "^A14_BF2_F\\d+$", "metadata": "A14_3_metadata.txt"},
+        {"film_pattern": "^A14_FL3_F\\d+$", "metadata": "A14_4_metadata.txt"}
+      ]
+    },
+    {
+      "id": "2026_07_16_M156",
+      "root": "/Volumes/X10 Pro/Movies/2026_07_16_M156",
+      "metadata_rules": [
+        {"film_pattern": "^3_FL1_F\\d+$", "metadata": "3_metadata.txt"},
+        {"film_pattern": "^3_BF1_F\\d+$", "metadata": "3_1_metadata.txt"},
+        {"film_pattern": "^3_FL2_F\\d+$", "metadata": "3_2_metadata.txt"},
+        {"film_pattern": "^3_BF2_F\\d+$", "metadata": "3_3_metadata.txt"},
+        {"film_pattern": "^3_FL3_F\\d+$", "metadata": "3_4_metadata.txt"},
+        {"film_pattern": "^3_BF3_F\\d+$", "metadata": "3_5_metadata.txt"},
+        {"film_pattern": "^3_FL4_F\\d+$", "metadata": "3_6_metadata.txt"},
+        {"film_pattern": "^3_BF4_F\\d+$", "metadata": "3_7_metadata.txt"},
+        {"film_pattern": "^3_FL5_F\\d+$", "metadata": "3_8_metadata.txt"},
+        {"film_pattern": "^3_BF5_F\\d+$", "metadata": "3_9_metadata.txt"},
+        {"film_pattern": "^3_FL6_F\\d+$", "metadata": "3_10_metadata.txt"}
+      ]
+    }
+  ]
+}

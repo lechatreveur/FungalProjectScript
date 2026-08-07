@@ -155,6 +155,7 @@ def remap_for_display(score: float) -> float:
 
 def main():
     X_traj, X_feat, gids, labels, s_traj, s_feat = load_feature_constrained_data(EXPERIMENTS)
+    X_feat_raw = X_feat * (s_feat.std + 1e-8) + s_feat.mean
     
     model = MultimodalAutoencoder3D().to(DEVICE)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
@@ -174,10 +175,10 @@ def main():
     color_arrays = {
         "Cell Area (max, px²)":  area_display,
         "Cycle Stage Score":      cycle_display,
-        "Pol1 Mid Intensity":    [round(float(X_feat[i,1]),4) for i in range(len(gids))],
-        "Pol2 Mid Intensity":    [round(float(X_feat[i,4]),4) for i in range(len(gids))],
-        "Periodicity":           [round(float(X_feat[i,7]),4) for i in range(len(gids))],
-        "NC Score":              [round(float(X_feat[i,6]),4) for i in range(len(gids))],
+        "Pol1 Mid Intensity":    [round(float(X_feat_raw[i,1]),4) for i in range(len(gids))],
+        "Pol2 Mid Intensity":    [round(float(X_feat_raw[i,4]),4) for i in range(len(gids))],
+        "Periodicity":           [round(float(X_feat_raw[i,7]),4) for i in range(len(gids))],
+        "NC Score":              [round(float(X_feat_raw[i,6]),4) for i in range(len(gids))],
     }
     
     # 3D
@@ -206,8 +207,8 @@ def main():
         traj_dict[gid] = {
             "p1":    raw.get('p1', X_traj[i][:,0].tolist()),
             "p2":    raw.get('p2', X_traj[i][:,1].tolist()),
-            "f":     [round(float(X_feat[i,1]),4), round(float(X_feat[i,7]),4),
-                      round(float(X_feat[i,6]),4), round(float(cycle_scores[i]),4) if not np.isnan(cycle_scores[i]) else None],
+            "f":     [round(float(X_feat_raw[i,1]),4), round(float(X_feat_raw[i,7]),4),
+                      round(float(X_feat_raw[i,6]),4), round(float(cycle_scores[i]),4) if not np.isnan(cycle_scores[i]) else None],
             "strip": get_strip_b64(gid),
             "idx":   i
         }

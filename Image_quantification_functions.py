@@ -278,7 +278,11 @@ def transform_to_mn_space(midpoint1, midpoint2, cropped_cell_mask, reflect=True)
 
     # Define m-axis direction vector
     d = p2 - p1
-    d = d / np.linalg.norm(d)
+    d_norm = np.linalg.norm(d)
+    if not np.isfinite(d_norm) or d_norm < 1e-12:
+        d = np.array([1.0, 0.0])
+    else:
+        d = d / d_norm
 
     # Perpendicular direction (n-axis)
     n = np.array([-d[1], d[0]])
@@ -477,7 +481,11 @@ def mu_xy_to_mu_mn(midpoint1,midpoint2,mu_xy, reflect=True):
     p1 = np.array([midpoint1[1], midpoint1[0]])  # (x1, y1)
     p2 = np.array([midpoint2[1], midpoint2[0]])  # (x2, y2)
     d = p2 - p1
-    d = d / np.linalg.norm(d)
+    d_norm = np.linalg.norm(d)
+    if not np.isfinite(d_norm) or d_norm < 1e-12:
+        d = np.array([1.0, 0.0])
+    else:
+        d = d / d_norm
     n = np.array([-d[1], d[0]])
 
     mu_xy = np.array([mu_xy[0], mu_xy[1]])  # (col, row)
@@ -872,8 +880,11 @@ def axis_extrema_points(
     """
     direction = np.asarray(direction, dtype=float)
     norm = np.linalg.norm(direction)
-    if norm == 0:
+    if not np.isfinite(norm) or norm == 0:
         raise ValueError("`direction` must be nonzero.")
+    boundary_coords = np.asarray(boundary_coords, dtype=float)
+    if boundary_coords.ndim != 2 or boundary_coords.shape[0] == 0:
+        raise ValueError("No boundary points are available.")
     d = direction / norm  # ensure unit vector
 
     rel = boundary_coords - P0  # (M, 2)
@@ -883,7 +894,11 @@ def axis_extrema_points(
 
     on_axis = dist < tol
     if not np.any(on_axis):
-        raise ValueError("No boundary points found within tolerance of the axis.")
+        # Pixelized, irregular, or disconnected masks do not always place a
+        # discrete boundary pixel inside a narrow axis corridor. The extrema
+        # of the full boundary's projection are the geometric support points
+        # along this direction and provide a stable fallback.
+        on_axis = np.ones(boundary_coords.shape[0], dtype=bool)
 
     t_sel = t[on_axis]
     pts_sel = boundary_coords[on_axis]
@@ -923,27 +938,38 @@ def ImageQuantification(
     region = props[0]  # There should only be one region for this single cell mask
     min_row, min_col, max_row, max_col = region.bbox
     
-    # Crop the fluorescent image around the cell's bounding box
-    cropped_img = fluorescent_img[min_row:max_row, min_col:max_col]
-    # Create a cropped cell mask from the full cell mask:
-    cropped_cell_mask = cell_mask[min_row:max_row, min_col:max_col]
-    # Ensure the first and last rows and columns of cropped_cell_mask are False.
-    cropped_cell_mask[0, :] = False
-    cropped_cell_mask[-1, :] = False
-    cropped_cell_mask[:, 0] = False
-    cropped_cell_mask[:, -1] = False
-    
+    # Keep the crop at the exact bounding-box size expected by downstream
+    # coordinate reconstruction. Do not clear its boundary pixels: that can
+    # erase thin cells entirely.
+    cropped_img = np.asarray(
+        fluorescent_img[min_row:max_row, min_col:max_col]
+    )
+    cropped_cell_mask = np.array(
+        cell_mask[min_row:max_row, min_col:max_col],
+        dtype=bool,
+        copy=True,
+    )
 
     labeled_cell = label(cropped_cell_mask)
-    #print(labeled_cell)
-    props = regionprops(labeled_cell)[0]
-
-    if not props:
-        raise ValueError("No region found in the mask.")
+    cropped_props = regionprops(labeled_cell)
+    if not cropped_props:
+        raise ValueError("No region found in the cropped cell mask.")
+    props = cropped_props[0]
 
     #---- Extract basic properties from the cropped cell mask and cropped image
     # Extract the cell boundary wiht find_contours.
-    contours = find_contours(cropped_cell_mask.astype(float), level=0.5)
+    # Pad only the temporary contour image so a cell filling its exact bbox
+    # still has a closed contour. Convert coordinates back to crop space.
+    contour_mask = np.pad(
+        cropped_cell_mask,
+        1,
+        mode="constant",
+        constant_values=False,
+    )
+    contours = [
+        contour - 1.0
+        for contour in find_contours(contour_mask.astype(float), level=0.5)
+    ]
     if len(contours) == 0:
         raise ValueError("No contour found in the cell mask.")
     # Use the longest contour.
@@ -1184,6 +1210,7 @@ def ImageQuantification(
             
             #Convergence check.
             if check_convergence(params_unlinked, params_unlinked_new, tol):
+                params_unlinked = params_unlinked_new
                 print(f"Convergence reached at iteration {iteration}")
                 break
             
@@ -1193,34 +1220,32 @@ def ImageQuantification(
      
     
         # ----- Fix polarity sites ----
-        # Get endpoints
-            ep1 = endpoint1
-            ep2 = endpoint2
-            pol1_int = params_unlinked['mu_P1_Y2']
-            pol2_int = params_unlinked['mu_P2_Y2']
-            
-            if tp == 0:
-                # Save reference endpoint for comparison
-                ref_ep1 = endpoint1
-                ref_ep2 = endpoint2
-            # Reorder based on reference (skip t=0 since it's the reference)
+        ep1 = endpoint1
+        ep2 = endpoint2
+        pol1_int = params_unlinked['mu_P1_Y2']
+        pol2_int = params_unlinked['mu_P2_Y2']
+
+        if tp == 0:
+            # Save reference endpoint for comparison
+            ref_ep1 = endpoint1
+            ref_ep2 = endpoint2
+        # Reorder based on reference (skip t=0 since it's the reference)
+        else:
+            ep1, ep2 = order_endpoints_by_proximity(ep1, ep2, ref_ep1, ref_ep2)
+            if np.allclose(ep1, endpoint1):
+                params_unlinked['mu_P1_Y2'] = pol1_int
+                params_unlinked['mu_P2_Y2'] = pol2_int
             else:
-                ep1, ep2 = order_endpoints_by_proximity(ep1, ep2, ref_ep1, ref_ep2)
-                if np.allclose(ep1, endpoint1):
-                    params_unlinked['mu_P1_Y2'] = pol1_int 
-                    params_unlinked['mu_P2_Y2'] = pol2_int 
-    
-                else:
-                    # Endpoints were swapped
-                    pol1_int = params_unlinked['mu_P2_Y2']
-                    pol2_int = params_unlinked['mu_P1_Y2']
-                    params_unlinked['mu_P1_Y2'] = pol1_int 
-                    params_unlinked['mu_P2_Y2'] = pol2_int 
-    
-                    pol1_gamma = gammas_unlinked['Y2Z3']
-                    pol2_gamma = gammas_unlinked['Y2Z2']
-                    gammas_unlinked['Y2Z2']=pol1_gamma
-                    gammas_unlinked['Y2Z3']=pol2_gamma
+                # Endpoints were swapped
+                pol1_int = params_unlinked['mu_P2_Y2']
+                pol2_int = params_unlinked['mu_P1_Y2']
+                params_unlinked['mu_P1_Y2'] = pol1_int
+                params_unlinked['mu_P2_Y2'] = pol2_int
+
+                pol1_gamma = gammas_unlinked['Y2Z3']
+                pol2_gamma = gammas_unlinked['Y2Z2']
+                gammas_unlinked['Y2Z2'] = pol1_gamma
+                gammas_unlinked['Y2Z3'] = pol2_gamma
     
             
         Mu = [params_unlinked['mu_bg_Y2'],params_unlinked['mu_I_Y2'] ,params_unlinked['mu_P1_Y2'],params_unlinked['mu_P2_Y2'],params_unlinked['mu_S1_Y2'],params_unlinked['mu_S2_Y2']]

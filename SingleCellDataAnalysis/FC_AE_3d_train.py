@@ -13,10 +13,7 @@ sys.path.append('/Users/user/Documents/Python_Scripts/FungalProjectScript/')
 from SingleCellDataAnalysis.FC_AE_data_loader import load_feature_constrained_data
 
 EXPERIMENTS = {
-    "Sept17": "/Volumes/X10 Pro/Movies/2025_09_17/",
-    "M92":    "/Volumes/X10 Pro/Movies/2025_12_31_M92/",
-    "M93":    "/Volumes/X10 Pro/Movies/2026_01_08_M93/",
-    "June25_20m": "/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/"
+    "Sept17": "/Volumes/X10 Pro/Movies/2025_09_17/"
 }
 
 OUTPUT_DIR = "/Volumes/X10 Pro/FungalProject_Outputs/fc_ae_3d/"

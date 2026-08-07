@@ -5,11 +5,14 @@ import pandas as pd
 from pathlib import Path
 import sys
 
-# Try importing the map function, if it fails we just use empty mappings
+# Support both `python generate_sequence_linkages.py` and package imports.
 try:
-    from map_gfp_bf_id import map_gfp_to_bf_ids
+    from .map_gfp_bf_id import map_gfp_to_bf_ids
 except ImportError:
-    map_gfp_to_bf_ids = None
+    try:
+        from map_gfp_bf_id import map_gfp_to_bf_ids
+    except ImportError:
+        map_gfp_to_bf_ids = None
 
 BASE_MOVIE_ROOT = Path("/Volumes/X10 Pro/Movies")
 
@@ -363,3 +366,4 @@ if __name__ == "__main__":
     generate_linkages("2026_04_29_M133")
     generate_linkages("2026_04_30_M135")
     generate_linkages("2026_06_03_M143")
+    generate_linkages("2026_07_16_M156")

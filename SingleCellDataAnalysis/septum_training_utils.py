@@ -248,10 +248,15 @@ def export_cell_training_sample(
     offset: int,         # aligned = tp + offset
     start_idx: int,
     end_idx: int,
+    start_idx_2: int = -1,
+    end_idx_2: int = -1,
     label_source: str = "none",               # "cell" | "global" | "none"
     start_aligned: Optional[float] = None,    # audit only
     end_aligned: Optional[float] = None,      # audit only
+    start_aligned_2: Optional[float] = None,  # audit only
+    end_aligned_2: Optional[float] = None,    # audit only
     white_septum: bool = False,               # polarity inversion flag
+    white_septum_2: bool = False,
 ) -> str:
     """
     Writes:
@@ -269,9 +274,11 @@ def export_cell_training_sample(
     """
     npz_fp = sample_npz_path(working_dir, film_name, cell_id)
 
-    # Normalize indices
+    # Normalize indices for both independently annotated septum intervals.
     s_idx = -1 if start_idx is None else int(start_idx)
     e_idx = -1 if end_idx is None else int(end_idx)
+    s_idx_2 = -1 if start_idx_2 is None else int(start_idx_2)
+    e_idx_2 = -1 if end_idx_2 is None else int(end_idx_2)
 
     # Normalize strip + infer tile_size/L
     strip = np.asarray(strip, dtype=np.uint8)
@@ -293,17 +300,26 @@ def export_cell_training_sample(
         s_idx = -1
     if e_idx >= 0 and not (0 <= e_idx < L):
         e_idx = -1
+    if s_idx_2 >= 0 and not (0 <= s_idx_2 < L):
+        s_idx_2 = -1
+    if e_idx_2 >= 0 and not (0 <= e_idx_2 < L):
+        e_idx_2 = -1
 
-    # Only swap if BOTH exist
+    # Only swap if BOTH endpoints of the same event exist.
     if s_idx >= 0 and e_idx >= 0 and e_idx < s_idx:
         s_idx, e_idx = e_idx, s_idx
+    if s_idx_2 >= 0 and e_idx_2 >= 0 and e_idx_2 < s_idx_2:
+        s_idx_2, e_idx_2 = e_idx_2, s_idx_2
 
-    # Derive has from indices
+    # Keep the legacy `has` field as event 1 for old readers.
     has_i = int((s_idx >= 0) or (e_idx >= 0))
+    has_i_2 = int((s_idx_2 >= 0) or (e_idx_2 >= 0))
     if has_i == 0:
         s_idx, e_idx = -1, -1
-        if not label_source:
+        if has_i_2 == 0 and not label_source:
             label_source = "none"
+    if has_i_2 == 0:
+        s_idx_2, e_idx_2 = -1, -1
 
     atomic_save_npz(
         npz_fp,
@@ -315,6 +331,9 @@ def export_cell_training_sample(
         has=np.array([has_i], dtype=np.int8),
         start_idx=np.array([s_idx], dtype=np.int32),
         end_idx=np.array([e_idx], dtype=np.int32),
+        has_2=np.array([has_i_2], dtype=np.int8),
+        start_idx_2=np.array([s_idx_2], dtype=np.int32),
+        end_idx_2=np.array([e_idx_2], dtype=np.int32),
         label_source=np.array([str(label_source)], dtype=object),
         start_aligned=np.array(
             [np.nan if start_aligned is None else float(start_aligned)],
@@ -322,6 +341,14 @@ def export_cell_training_sample(
         ),
         end_aligned=np.array(
             [np.nan if end_aligned is None else float(end_aligned)],
+            dtype=np.float32,
+        ),
+        start_aligned_2=np.array(
+            [np.nan if start_aligned_2 is None else float(start_aligned_2)],
+            dtype=np.float32,
+        ),
+        end_aligned_2=np.array(
+            [np.nan if end_aligned_2 is None else float(end_aligned_2)],
             dtype=np.float32,
         ),
     )
@@ -335,12 +362,18 @@ def export_cell_training_sample(
         "has": has_i,
         "start_idx": int(s_idx),
         "end_idx": int(e_idx),
+        "has_2": has_i_2,
+        "start_idx_2": int(s_idx_2),
+        "end_idx_2": int(e_idx_2),
         "label_source": str(label_source),
         "start_aligned": ("" if start_aligned is None else float(start_aligned)),
         "end_aligned": ("" if end_aligned is None else float(end_aligned)),
+        "start_aligned_2": ("" if start_aligned_2 is None else float(start_aligned_2)),
+        "end_aligned_2": ("" if end_aligned_2 is None else float(end_aligned_2)),
         "L": int(L),
         "tile_size": int(tile_size),
         "white_septum": bool(white_septum),   # polarity flag
+        "white_septum_2": bool(white_septum_2),
     }])
     upsert_manifest_rows(working_dir, row)
 

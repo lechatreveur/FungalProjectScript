@@ -4,6 +4,7 @@
 import os
 import gc
 import argparse
+import fnmatch
 import numpy as np
 from tifffile import imread, imwrite
 from tqdm import tqdm
@@ -13,14 +14,12 @@ from cellpose import core
 import torch
 torch.backends.mkldnn.enabled = False
 import cv2
-import fnmatch
 from imaris_ims_file_reader import ims
 
 # ----------------------------
 # Settings (non-working_dir)
 # ----------------------------
 #custom_model_path = "/RAID1/working/R402/hsushen/FungalProject/Movies/models/CP_20250517_152934"
-channels_for_segmentation = [0, 0]
 diameter = 80
 fps = 10
 
@@ -103,7 +102,7 @@ def create_movie(file_name, channel, frame_dir, output_dir):
     print(f"Saved movie: {out_path}")
 
 
-def process_ims_file(ims_path, working_dir):
+def process_ims_file(ims_path, working_dir, model=None):
     file_name = os.path.splitext(os.path.basename(ims_path))[0]
     print(f"Processing {file_name}")
     done_flag = os.path.join(working_dir, f"{file_name}/DONE_segmentation.txt")
@@ -119,13 +118,11 @@ def process_ims_file(ims_path, working_dir):
     for folder in [output_frames_folder, output_masks_folder, output_tracked_cells_folder]:
         os.makedirs(folder, exist_ok=True)
 
-    #model = models.CellposeModel(gpu=True, pretrained_model=custom_model_path)
-    # Use GPU if available (on a SLURM GPU node this should be True)
-    use_gpu = core.use_gpu()
-    print(f"[cellpose] use_gpu={use_gpu}")
-    
-    # Cellpose v4 default is pretrained_model='cpsam' (Cellpose-SAM)
-    model = models.CellposeModel(gpu=use_gpu)  # same as pretrained_model="cpsam"
+    if model is None:
+        # Cellpose v4 defaults to pretrained_model="cpsam" (Cellpose-SAM).
+        use_gpu = core.use_gpu()
+        print(f"[cellpose] use_gpu={use_gpu}")
+        model = models.CellposeModel(gpu=use_gpu)
 
     data = ims(ims_path)
     time_points, n_channels, z_stacks, height, width = data.shape
@@ -160,7 +157,6 @@ def process_ims_file(ims_path, working_dir):
             # Segment
             out = model.eval(
                 img,
-                channels=channels_for_segmentation,
                 channel_axis=None,
                 diameter=diameter,
             )
@@ -185,9 +181,27 @@ def process_ims_file(ims_path, working_dir):
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Batch segment all .ims files inside a working directory (C=1, Z=1).")
+    p = argparse.ArgumentParser(description="Batch segment selected .ims files inside a working directory.")
     p.add_argument("working_dir", help="Directory containing .ims files to process")
+    p.add_argument("--include", action="append", default=[], help="Filename glob to include")
+    p.add_argument("--exclude", action="append", default=[], help="Filename glob to exclude")
+    p.add_argument("--list-only", action="store_true", help="Print selected files without segmenting")
     return p.parse_args()
+
+
+def select_ims_files(directory, include_patterns=None, exclude_patterns=None):
+    include_patterns = include_patterns or ["*.ims"]
+    exclude_patterns = exclude_patterns or []
+    selected = []
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".ims") or name.startswith("._"):
+            continue
+        if not any(fnmatch.fnmatch(name, pattern) for pattern in include_patterns):
+            continue
+        if any(fnmatch.fnmatch(name, pattern) for pattern in exclude_patterns):
+            continue
+        selected.append(name)
+    return selected
 
 
 # ----------------------------
@@ -200,9 +214,19 @@ if __name__ == "__main__":
     if not os.path.isdir(working_dir):
         raise SystemExit(f"ERROR: working_dir does not exist or is not a directory: {working_dir}")
 
-    ims_files = [f for f in os.listdir(working_dir) if f.endswith(".ims") and not f.startswith("._")]
+    ims_files = select_ims_files(working_dir, args.include, args.exclude)
+    print(f"Selected {len(ims_files)} IMS file(s) in {working_dir}:")
+    for name in ims_files:
+        print(f"  {name}")
+
+    if args.list_only:
+        raise SystemExit(0)
     if not ims_files:
-        raise SystemExit(f"ERROR: No .ims files found in: {working_dir}")
+        raise SystemExit(f"ERROR: No .ims files matched the requested filters in: {working_dir}")
+
+    use_gpu = core.use_gpu()
+    print(f"[cellpose] use_gpu={use_gpu}")
+    model = models.CellposeModel(gpu=use_gpu)
 
     for f in ims_files:
-        process_ims_file(os.path.join(working_dir, f), working_dir)
+        process_ims_file(os.path.join(working_dir, f), working_dir, model=model)

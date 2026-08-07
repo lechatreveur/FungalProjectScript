@@ -26,9 +26,13 @@ import torchvision.models as tv_models
 # Helpers
 # ─────────────────────────────────────────────
 
-def _resnet18_backbone(in_channels: int = 3) -> tuple[nn.Module, int]:
+def _resnet18_backbone(
+    in_channels: int = 3,
+    pretrained: bool = True,
+) -> tuple[nn.Module, int]:
     """Return a ResNet-18 stem+body with modified first conv for `in_channels`."""
-    net = tv_models.resnet18(weights=tv_models.ResNet18_Weights.DEFAULT)
+    weights = tv_models.ResNet18_Weights.DEFAULT if pretrained else None
+    net = tv_models.resnet18(weights=weights)
     # Replace first conv: keep everything except in_channels
     net.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2,
                           padding=3, bias=False)
@@ -114,11 +118,14 @@ class CellTrackerModel(nn.Module):
     EMBED_DIM     = 512   # ResNet-18 output
     HIDDEN        = 256
 
-    def __init__(self):
+    def __init__(self, pretrained_backbone: bool = True):
         super().__init__()
 
         # ── shared encoder ──────────────────────────────
-        self.backbone, embed_dim = _resnet18_backbone(in_channels=3)
+        self.backbone, embed_dim = _resnet18_backbone(
+            in_channels=3,
+            pretrained=pretrained_backbone,
+        )
         assert embed_dim == self.EMBED_DIM
 
         # ── candidate shape encoder ─────────────────────
@@ -207,7 +214,9 @@ class CellTrackerModel(nn.Module):
 # ─────────────────────────────────────────────
 
 def load_tracker(ckpt_path: str, device: str = "cpu") -> CellTrackerModel:
-    model = CellTrackerModel().to(device)
+    # The checkpoint contains the complete model state, so inference does not
+    # need torchvision's pretrained weights (or network/cache access).
+    model = CellTrackerModel(pretrained_backbone=False).to(device)
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=True)
     state = ckpt.get("state_dict", ckpt)
     model.load_state_dict(state)

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fungal Cell Tracking Corrector</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+    <header>
+        <h1>🦠 Fungal Cell Tracking Corrector</h1>
+        <div class="header-controls">
+            <div>
+                <span style="color: var(--text-muted); font-size: 0.85rem; margin-right: 8px;">Experiment:</span>
+                <select id="experimentSelect"></select>
+            </div>
+            <div id="sequenceContainer">
+                <span style="color: var(--text-muted); font-size: 0.85rem; margin-right: 8px;">Sequence/Dataset:</span>
+                <select id="sequenceSelect"></select>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="left-panel">
+            <div class="zoom-status">
+                <div>Scale: <span id="scaleLabel">1.0</span>x</div>
+                <div>Pan: (<span id="panXLabel">0</span>, <span id="panYLabel">0</span>)</div>
+                <div style="margin-top: 4px; color: var(--text-main);">Mode: <strong id="modeLabel" style="color: var(--accent-primary);">Click-Select</strong></div>
+            </div>
+
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="imageCanvas"></canvas>
+            </div>
+
+            <div class="viewer-controls">
+                <div class="control-row">
+                    <div class="btn-group">
+                        <button id="prevBtn" title="Previous Frame (Left Arrow)">◀</button>
+                        <button id="playBtn" title="Play/Pause">Play</button>
+                        <button id="nextBtn" title="Next Frame (Right Arrow)">▶</button>
+                    </div>
+
+                    <div class="slider-container">
+                        <span id="currentTimeLabel">t=0</span>
+                        <div class="slider-wrapper">
+                            <div class="suspicious-ticks" id="suspiciousTicks"></div>
+                            <div id="filmBoundaries"></div>
+                            <input type="range" id="timeSlider" min="0" max="0" value="0">
+                        </div>
+                        <span id="maxTimeLabel">t=0</span>
+                    </div>
+
+                    <div class="btn-group">
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">Channel:</span>
+                        <button id="chanBfBtn" class="active">BF</button>
+                        <button id="chanGfpBtn">GFP</button>
+                    </div>
+
+                    <div class="btn-group">
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">View:</span>
+                        <button id="viewModeBtn" style="background-color: #581c87; color: white; font-weight: 500;">Single Cell</button>
+                    </div>
+                </div>
+
+                <div class="control-row" style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 4px;">
+                    <div class="btn-group">
+                        <button id="toolSelectBtn" class="active">Select Segment (S)</button>
+                        <button id="toolBrushBtn">Brush Draw (B)</button>
+                        <button id="toolEraserBtn">Eraser (E)</button>
+                    </div>
+                    <div class="btn-group" id="brushControls" style="display: none;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">Brush Size:</span>
+                        <input type="range" id="brushSizeSlider" min="1" max="50" value="10" style="width: 100px;">
+                        <span id="brushSizeLabel">10px</span>
+                    </div>
+                    <div class="btn-group">
+                        <button id="undoBtn">Undo (Ctrl+Z)</button>
+                        <button id="usePrevSegmentBtn" title="Use segment from previous frame (P)">Use Previous Segment (P)</button>
+                        <button id="clearBtn">Clear Frame Mask</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="panel-section" id="linkageSection">
+                <div class="panel-section-title">
+                    Tracking Linkages
+                    <span id="currentGlobalCellLabel" style="color: var(--accent-primary);"></span>
+                </div>
+                <div id="linkageList"></div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    Cell Selection
+                    <button id="trackNewCellBtn" style="padding: 4px 8px; font-size: 0.75rem; background-color: var(--accent-primary); color: white; display: none;">+ Track New Cell</button>
+                </div>
+                <div class="cell-grid" id="cellGrid"></div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-section-title">Cell Details & QC</div>
+                <div class="info-row">
+                    <span class="info-label">Active Cell:</span>
+                    <span class="info-value" id="cellIdLabel">None</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Tracking Channel:</span>
+                    <span class="info-value" id="cellChannelLabel">-</span>
+                </div>
+                <div class="info-row" id="localFilmRow" style="display:none;">
+                    <span class="info-label">Current Film:</span>
+                    <span class="info-value" id="localFilmLabel">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Mask Status:</span>
+                    <span id="maskStatusText" class="status-badge badge-pending">Pending</span>
+                </div>
+                <div class="btn-group" style="margin-top: 16px; width: 100%; justify-content: space-between;">
+                    <button id="btnMarkGood" class="btn-success">Good</button>
+                    <button id="btnMarkBad" class="btn-danger">Bad</button>
+                    <button id="btnMarkCorrected" class="btn-corrected">Corrected</button>
+                </div>
+                <div class="btn-group" id="quantifyHpcGroup" style="margin-top: 16px; width: 100%; display: none;">
+                    <button id="btnQuantifyHpc" style="width: 100%; background-color: var(--accent-secondary); color: white;">💻 Quantify Locally (Seed from CSV)</button>
+                </div>
+                <button id="btnExitLocalEdit" style="margin-top: 12px; width: 100%; display: none; background-color: #4b5563; color: white;">🔙 Return to Linkage</button>
+            </div>
+
+            <div class="panel-section" id="suspiciousSection" style="display:none;">
+                <div class="panel-section-title" style="color: #f59e0b;">⚠ Suspicious Frames</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">Frames where the segment's centroid jumps significantly.</div>
+                <div class="suspicious-frame-list" id="suspiciousFrameList"></div>
+            </div>
+
+            <div class="panel-section" id="divisionSection" style="display:none;">
+                <div class="panel-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    Division & Septum AI
+                    <button id="predictSeptumBtn" style="padding: 4px 8px; font-size: 0.75rem; background-color: #581c87; color: white;">🤖 Run AI</button>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: bold;">Septum 1</span>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">Has Septum:</span>
+                        <input type="checkbox" id="hasSeptumCheckbox" style="width: 16px; height: 16px; accent-color: var(--accent-green);">
+                    </div>
+                    <div id="divisionIntervalContainer" style="display: none; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted); width: 80px;">Start Frame:</span>
+                            <input type="number" id="septumStartInput" style="width: 70px; background-color: var(--bg-dark); border: 1px solid var(--border-color); color: white; padding: 4px; border-radius: 4px;" min="0">
+                            <button id="setSeptumStartBtn" style="padding: 4px 8px; font-size: 0.7rem;">Set Current</button>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted); width: 80px;">End Frame:</span>
+                            <input type="number" id="septumEndInput" style="width: 70px; background-color: var(--bg-dark); border: 1px solid var(--border-color); color: white; padding: 4px; border-radius: 4px;" min="0">
+                            <button id="setSeptumEndBtn" style="padding: 4px 8px; font-size: 0.7rem;">Set Current</button>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgba(255,255,255,0.03); padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); margin-top: 4px;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Click Gallery to:</span>
+                            <div style="display: flex; gap: 4px;">
+                                <button id="galleryClickNavBtn" class="active" style="padding: 2px 6px; font-size: 0.7rem;">Nav</button>
+                                <button id="galleryClickStartBtn" style="padding: 2px 6px; font-size: 0.7rem;">Start 1</button>
+                                <button id="galleryClickEndBtn" style="padding: 2px 6px; font-size: 0.7rem;">End 1</button>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted);">White Septum:</span>
+                            <input type="checkbox" id="whiteSeptumCheckbox" style="width: 16px; height: 16px; accent-color: #eab308;">
+                        </div>
+                    </div>
+
+                    <hr style="border-color: var(--border-color); margin: 8px 0;">
+
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: bold;">Septum 2</span>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">Has Septum 2:</span>
+                        <input type="checkbox" id="hasSeptumCheckbox2" style="width: 16px; height: 16px; accent-color: var(--accent-green);">
+                    </div>
+                    <div id="divisionIntervalContainer2" style="display: none; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted); width: 80px;">Start Frame:</span>
+                            <input type="number" id="septumStartInput2" style="width: 70px; background-color: var(--bg-dark); border: 1px solid var(--border-color); color: white; padding: 4px; border-radius: 4px;" min="0">
+                            <button id="setSeptumStartBtn2" style="padding: 4px 8px; font-size: 0.7rem;">Set Current</button>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted); width: 80px;">End Frame:</span>
+                            <input type="number" id="septumEndInput2" style="width: 70px; background-color: var(--bg-dark); border: 1px solid var(--border-color); color: white; padding: 4px; border-radius: 4px;" min="0">
+                            <button id="setSeptumEndBtn2" style="padding: 4px 8px; font-size: 0.7rem;">Set Current</button>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgba(255,255,255,0.03); padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); margin-top: 4px;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Click Gallery to:</span>
+                            <div style="display: flex; gap: 4px;">
+                                <button id="galleryClickStartBtn2" style="padding: 2px 6px; font-size: 0.7rem;">Start 2</button>
+                                <button id="galleryClickEndBtn2" style="padding: 2px 6px; font-size: 0.7rem;">End 2</button>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted);">White Septum:</span>
+                            <input type="checkbox" id="whiteSeptumCheckbox2" style="width: 16px; height: 16px; accent-color: #eab308;">
+                        </div>
+                    </div>
+                    <!-- AI Probability Chart -->
+                    <div id="septumAiChart" style="display: none; flex-direction: column; gap: 4px; margin-top: 8px;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                            <span>Full-lineage AI review</span>
+                            <span id="septumAiPeakText" style="color: var(--accent-green); font-weight: bold;"></span>
+                        </div>
+                        <div id="septumAiWarning" style="display: none; font-size: 0.7rem; color: #f59e0b;"></div>
+                        <div id="septumAiSparkline" style="height: 32px; background: #0b0f19; border: 1px solid var(--border-color); border-radius: 4px; display: flex; align-items: flex-end; padding: 2px; overflow: hidden; position: relative;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-section-title">Dynamic Cell Gallery</div>
+                <div class="strip-container" id="stripContainer">
+                    <span style="color: var(--text-muted); font-size: 0.85rem;">Select a cell to view strip crops...</span>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-section-title">Bulk Auto-Fix from Raw Segments</div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <input type="number" id="autofixStartInput" placeholder="Start T" style="width: 80px;" class="custom-input">
+                    <span style="color: var(--text-muted);">to</span>
+                    <input type="number" id="autofixEndInput" placeholder="End T" style="width: 80px;" class="custom-input">
+                </div>
+                <div class="btn-group" style="width: 100%;">
+                    <button class="btn btn-secondary" id="setAutofixStartBtn" title="Set start to current frame" style="flex: 1; padding: 4px;">Set Start</button>
+                    <button class="btn btn-secondary" id="setAutofixEndBtn" title="Set end to current frame" style="flex: 1; padding: 4px;">Set End</button>
+                    <button class="btn btn-primary" id="runAutofixBtn" style="flex: 2; padding: 4px;" title="Auto-fix masks in range based on highest IoU with raw segments">Run Auto-Fix</button>
+                </div>
+            </div>
+
+            <div class="panel-section" style="margin-top: auto;">
+                <div class="btn-group" style="width: 100%; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Autosaves on change</span>
+                        <span id="autosaveStatus" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: #1e293b; color: var(--text-muted);">Idle</span>
+                    </div>
+                    <button id="btnSaveCell" class="btn-success" style="width: 100%; padding: 12px;">💾 Save now</button>
+                    <button id="btnRequantify" style="width: 100%; padding: 12px; background-color: #581c87; display: none;">⚙️ Re-run quantification on cell</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal for Linkage Editing -->
+    <div id="modalOverlay">
+        <div id="modalContent">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="font-size: 1.25rem;">Replace Linkage for <span id="modalFilmName" style="color: var(--accent-primary);"></span></h2>
+                <button onclick="closeModal()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">×</button>
+            </div>
+            <p style="color: var(--text-muted); margin-top: 8px;">Select the correct cell from the gallery below (showing T=0 crops).</p>
+            <div id="modalGallery"></div>
+        </div>
+    </div>
+
+    <!-- Modular JS scripts -->
+    <script src="{{ url_for('static', filename='js/state.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/canvas.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/cells.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/linkage.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/qc.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/septum.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/gallery.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

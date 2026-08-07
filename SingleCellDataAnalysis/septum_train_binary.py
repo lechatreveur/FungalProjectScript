@@ -121,6 +121,7 @@ class SeptumWindowDataset(Dataset):
         self.L_max = int(L_max)
         self.include_pos_prob = float(include_pos_prob)
         self.rng = np.random.default_rng(seed)
+        self.npz_cache = {}
 
         # sanity
         if self.L_min <= 0 or self.L_max <= 0 or self.L_min > self.L_max:
@@ -130,6 +131,9 @@ class SeptumWindowDataset(Dataset):
         return len(self.df)
 
     def _load_npz(self, npz_fp: str):
+        if npz_fp in self.npz_cache:
+            return self.npz_cache[npz_fp]
+
         with np.load(npz_fp, allow_pickle=True) as z:
             strip = np.asarray(z["strip"], dtype=np.uint8)  # (H, H*L)
             H = int(strip.shape[0])
@@ -142,7 +146,10 @@ class SeptumWindowDataset(Dataset):
 
         tiles = strip.reshape(H, L, H).transpose(1, 0, 2)[:, None, :, :]  # (L,1,H,H)
         x_full = tiles.astype(np.float32) / 255.0
-        return x_full, start_idx, end_idx  # x_full: (L,1,H,W)
+        
+        res = (x_full, start_idx, end_idx)
+        self.npz_cache[npz_fp] = res
+        return res
 
     def __getitem__(self, i: int):
         row = self.df.iloc[i]
@@ -319,15 +326,31 @@ class EndpointMIL(nn.Module):
 # loss / metrics
 # =========================
 def compute_pos_weight_from_manifest(train_df: pd.DataFrame) -> tuple[float]:
-    """pos_weight = neg/pos for BCEWithLogitsLoss."""
-    s = pd.to_numeric(train_df["start_idx"], errors="coerce").fillna(-1).astype(int).values
-    e = pd.to_numeric(train_df["end_idx"], errors="coerce").fillna(-1).astype(int).values
-
-    s_pos = int((s >= 0).sum())
-    n = len(train_df)
-    s_neg = n - s_pos
-
-    s_w = float(s_neg / max(1, s_pos))
+    """pos_weight = neg/pos for BCEWithLogitsLoss at the frame level."""
+    pos_frames = 0
+    neg_frames = 0
+    
+    for idx, row in train_df.iterrows():
+        s = int(row.get("start_idx", -1))
+        e = int(row.get("end_idx", -1))
+        L = int(row.get("L", 101))
+        
+        if s >= 0 or e >= 0:
+            if s >= 0 and e >= 0:
+                e_clamp = e
+            elif s >= 0:
+                e_clamp = min(s + _DEFAULT_SEP_DURATION, L - 1)
+            else:
+                s = max(0, e - _DEFAULT_SEP_DURATION)
+                e_clamp = e
+            
+            p_count = max(0, min(e_clamp + 1, L) - s)
+            pos_frames += p_count
+            neg_frames += (L - p_count)
+        else:
+            neg_frames += L
+            
+    s_w = float(neg_frames / max(1, pos_frames))
     return (s_w,)
 
 
@@ -449,6 +472,7 @@ def train(
             num_workers=num_workers,
             collate_fn=collate_pad,
             pin_memory=(device == "cuda"),
+            persistent_workers=(num_workers > 0),
         )
     else:
         dl_tr = DataLoader(
@@ -458,6 +482,7 @@ def train(
             num_workers=num_workers,
             collate_fn=collate_pad,
             pin_memory=(device == "cuda"),
+            persistent_workers=(num_workers > 0),
         )
 
     dl_va = DataLoader(
@@ -467,6 +492,7 @@ def train(
         num_workers=num_workers,
         collate_fn=collate_pad,
         pin_memory=(device == "cuda"),
+        persistent_workers=(num_workers > 0),
     )
 
     # loss weights (computed from TRAIN SPLIT manifest)

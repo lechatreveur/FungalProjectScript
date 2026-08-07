@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Septum Alignment Board</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-left">
+            <div class="brand">
+                <span class="brand-icon">🔬</span>
+                <h1>Septum Alignment Board</h1>
+            </div>
+            
+            <div class="control-group">
+                <label for="experimentSelect">Experiment:</label>
+                <select id="experimentSelect" class="custom-select"></select>
+            </div>
+            
+            <div class="control-group">
+                <label for="sequenceSelect">Sequence:</label>
+                <select id="sequenceSelect" class="custom-select"></select>
+            </div>
+
+            <div class="control-group">
+                <label for="channelSelect">Channel:</label>
+                <select id="channelSelect" class="custom-select">
+                    <option value="bf" selected>Brightfield (BF)</option>
+                    <option value="gfp">Fluorescence (GFP)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <div class="control-group">
+                <label for="rowsPerPageSelect">Rows:</label>
+                <select id="rowsPerPageSelect" class="custom-select mini">
+                    <option value="6">6</option>
+                    <option value="12" selected>12</option>
+                    <option value="24">24</option>
+                    <option value="48">48</option>
+                </select>
+            </div>
+
+            <div class="pagination-controls">
+                <button id="firstPageBtn" class="btn btn-icon" title="First Page">⏮</button>
+                <button id="prevPageBtn" class="btn btn-icon" title="Previous Page">◀</button>
+                <span id="pageInfo" class="page-info">Page 1 of 1</span>
+                <button id="nextPageBtn" class="btn btn-icon" title="Next Page">▶</button>
+                <button id="lastPageBtn" class="btn btn-icon" title="Last Page">⏭</button>
+                <input type="range" id="pageSlider" min="1" max="1" value="1" class="page-slider">
+            </div>
+
+            <span id="totalCellsBadge" class="badge">0 cells</span>
+        </div>
+    </header>
+
+    <div class="mode-bar">
+        <span class="mode-label">Click Mode:</span>
+        <div class="mode-btn-group">
+            <button id="modeNavBtn" class="mode-btn active" data-mode="nav">🔍 Nav</button>
+            <button id="modeStart1Btn" class="mode-btn mode-start" data-mode="start1">▶ Set Start 1</button>
+            <button id="modeEnd1Btn" class="mode-btn mode-end" data-mode="end1">⏹ Set End 1</button>
+            <button id="modeStart2Btn" class="mode-btn mode-start" data-mode="start2">▶ Set Start 2</button>
+            <button id="modeEnd2Btn" class="mode-btn mode-end" data-mode="end2">⏹ Set End 2</button>
+        </div>
+
+        <div class="legend-group">
+            <span class="legend-item"><span class="legend-box human-box"></span> Human Label</span>
+            <span class="legend-item"><span class="legend-box ai-box"></span> AI Suggestion</span>
+        </div>
+    </div>
+
+    <main class="app-main">
+        <div id="boardGrid" class="board-grid">
+            <div class="empty-state">Loading sequence data...</div>
+        </div>
+    </main>
+
+    <script src="/static/js/board.js"></script>
+</body>
+</html>

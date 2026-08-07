@@ -227,7 +227,7 @@ def main():
                       round(float(X_feat_all[i,6]),4), round(float(cycle_scores[i]),4) if not np.isnan(cycle_scores[i]) else None],
             "raw_feats": {
                 "pol1_mid": round(float(X_feat_all_raw[i, 1]), 4),
-                "d": round(float(X_feat_all_raw[i, 9]), 4),
+                "pol2_mid": round(float(X_feat_all_raw[i, 4]), 4),
                 "periodicity": round(float(X_feat_all_raw[i, 7]), 4)
             },
             "strip": get_strip_b64(gid),
@@ -292,8 +292,8 @@ def main():
       <div id="thresholds-container" style="display: none; align-items: center; gap: 8px; margin-left: 8px; border-left: 1px solid #475569; padding-left: 12px;">
         <label style="color: #94a3b8; font-size: 0.8rem;">pol1_mid:</label>
         <input type="number" id="thresh-pol1-mid" value="4.04" step="0.01" style="width: 55px; background: #334155; color: white; border: 1px solid #475569; border-radius: 4px; padding: 2px 4px; font-size: 0.8rem;">
-        <label style="color: #94a3b8; font-size: 0.8rem;">d:</label>
-        <input type="number" id="thresh-d" value="4.09" step="0.01" style="width: 55px; background: #334155; color: white; border: 1px solid #475569; border-radius: 4px; padding: 2px 4px; font-size: 0.8rem;">
+        <label style="color: #94a3b8; font-size: 0.8rem;">pol2_mid:</label>
+        <input type="number" id="thresh-pol2-mid" value="2.0" step="0.01" style="width: 55px; background: #334155; color: white; border: 1px solid #475569; border-radius: 4px; padding: 2px 4px; font-size: 0.8rem;">
         <label style="color: #94a3b8; font-size: 0.8rem;">mono_osc:</label>
         <input type="number" id="thresh-mono-osc" value="5.0" step="0.1" style="width: 45px; background: #334155; color: white; border: 1px solid #475569; border-radius: 4px; padding: 2px 4px; font-size: 0.8rem;">
         <label style="color: #94a3b8; font-size: 0.8rem;">bi_osc:</label>
@@ -323,16 +323,16 @@ def main():
       [0.8, '#3b82f6'], [1.0, '#3b82f6']
     ];
 
-    function getCategory(pol1_mid, d, periodicity) {
+    function getCategory(pol1_mid, pol2_mid, periodicity) {
         var p1_mid_thresh = parseFloat(document.getElementById('thresh-pol1-mid').value);
-        var d_thresh = parseFloat(document.getElementById('thresh-d').value);
+        var p2_mid_thresh = parseFloat(document.getElementById('thresh-pol2-mid').value);
         var mono_osc_thresh = parseFloat(document.getElementById('thresh-mono-osc').value);
         var bi_osc_thresh = parseFloat(document.getElementById('thresh-bi-osc').value);
         
         if (pol1_mid < p1_mid_thresh) {
             return 0; // Non-polarized
         } else {
-            if (d > d_thresh) {
+            if (pol2_mid < p2_mid_thresh) {
                 return (periodicity > mono_osc_thresh) ? 2 : 1; // Monopolar Osc vs Monopolar
             } else {
                 return (periodicity > bi_osc_thresh) ? 4 : 3; // Bipolar Osc vs Bipolar
@@ -367,7 +367,7 @@ def main():
                 var gids = currentPlot.data[i].customdata.map(d => d[0]);
                 var traceColors = gids.map(gid => {
                     var cell = trajData[gid];
-                    return getCategory(cell.raw_feats.pol1_mid, cell.raw_feats.d, cell.raw_feats.periodicity);
+                    return getCategory(cell.raw_feats.pol1_mid, cell.raw_feats.pol2_mid, cell.raw_feats.periodicity);
                 });
                 currentPlot.data[i].marker.color = traceColors;
                 currentPlot.data[i].marker.cmin = -0.5;
@@ -430,7 +430,7 @@ def main():
     document.getElementById('color-select').addEventListener('change', renderPlot);
     
     document.getElementById('thresh-pol1-mid').addEventListener('input', renderPlot);
-    document.getElementById('thresh-d').addEventListener('input', renderPlot);
+    document.getElementById('thresh-pol2-mid').addEventListener('input', renderPlot);
     document.getElementById('thresh-mono-osc').addEventListener('input', renderPlot);
     document.getElementById('thresh-bi-osc').addEventListener('input', renderPlot);
 
@@ -454,7 +454,7 @@ def main():
           var clbl = cycleLabel(cyc);
           var cycStr = cyc !== null ? cyc.toFixed(3) : 'N/A';
           
-          var cat = getCategory(cell.raw_feats.pol1_mid, cell.raw_feats.d, cell.raw_feats.periodicity);
+          var cat = getCategory(cell.raw_feats.pol1_mid, cell.raw_feats.pol2_mid, cell.raw_feats.periodicity);
           var catlbl = categoryLabel(cat);
 
           document.getElementById('content').innerHTML =
@@ -466,7 +466,7 @@ def main():
               '<div class="stat"><span>Cycle Stage</span><span class="val">' +
                 cycStr + '<span class="cycle-badge" style="background:' + clbl.col + '">' + clbl.txt + '</span></span></div>' +
               '<div class="stat"><span>Pol1 Mid (raw)</span><span class="val">' + cell.raw_feats.pol1_mid.toFixed(4) + '</span></div>' +
-              '<div class="stat"><span>d (raw)</span><span class="val">' + cell.raw_feats.d.toFixed(4) + '</span></div>' +
+              '<div class="stat"><span>Pol2 Mid (raw)</span><span class="val">' + cell.raw_feats.pol2_mid.toFixed(4) + '</span></div>' +
               '<div class="stat"><span>Periodicity (raw)</span><span class="val">' + cell.raw_feats.periodicity.toFixed(4) + '</span></div>' +
               '<div class="stat"><span>NC Score (scaled)</span><span class="val">' + cell.f[2].toFixed(4) + '</span></div>' +
             '</div>' +

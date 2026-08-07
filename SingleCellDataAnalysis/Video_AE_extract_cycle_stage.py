@@ -68,12 +68,12 @@ def find_cell_data_csv(gid: str, stacked_dfs: dict, id_map_dfs: dict) -> str | N
     known_labels = sorted(EXPERIMENT_BASES.keys(), key=lambda x: -len(x))
 
     exp_label = None
-    local_cell_id = None
+    suffix = None
     for lbl in known_labels:
         prefix = lbl + '_'
         if gid.startswith(prefix):
             exp_label = lbl
-            local_cell_id = int(gid[len(prefix):])
+            suffix = gid[len(prefix):]
             break
 
     if exp_label is None:
@@ -83,14 +83,26 @@ def find_cell_data_csv(gid: str, stacked_dfs: dict, id_map_dfs: dict) -> str | N
 
     # Resolve film name and orig cell ID
     if exp_label == 'Sept17':
-        df_s = stacked_dfs.get('Sept17')
-        if df_s is None:
-            return None
-        film_name, orig_id = resolve_cell_info_sept17(local_cell_id, df_s)
+        parts = suffix.split('_')
+        if len(parts) >= 2 and parts[-1] in ['GFP1', 'GFP2']:
+            source = parts[-1]
+            gcid = "_".join(parts[:-1])
+            parts_gcid = gcid.split('_')
+            field = parts_gcid[0]
+            orig_id = int(parts_gcid[-1])
+            film_name = f"A14_1TP1_{field}" if source == 'GFP1' else f"A14_1TP2_{field}"
+        else:
+            local_cell_id = int(suffix)
+            df_s = stacked_dfs.get('Sept17')
+            if df_s is None:
+                return None
+            film_name, orig_id = resolve_cell_info_sept17(local_cell_id, df_s)
     elif exp_label == 'June25_20m':
+        local_cell_id = int(suffix)
         film_name = FILM_FOLDER_MAP.get(('June25_20m', 'GFP1', 'F0'))
         orig_id = local_cell_id
     else:
+        local_cell_id = int(suffix)
         df_m = id_map_dfs.get(exp_label)
         if df_m is None:
             return None

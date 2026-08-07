@@ -29,7 +29,10 @@ def load_and_preprocess_trajectories(experiments_dict):
             
         df = pd.read_csv(csv_path)
         df['experiment'] = exp_name
-        df['global_cell_id'] = exp_name + "_" + df['cell_id'].astype(str)
+        if 'global_cell_id' in df.columns:
+            df['global_cell_id'] = exp_name + "_" + df['global_cell_id'].astype(str) + "_" + df['source'].astype(str)
+        else:
+            df['global_cell_id'] = exp_name + "_" + df['cell_id'].astype(str)
         df_list.append(df)
         
     if not df_list:

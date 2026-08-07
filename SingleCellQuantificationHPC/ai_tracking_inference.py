@@ -77,7 +77,7 @@ def get_candidates(lab_cur, ref_mask, min_overlap=0.1):
                 
     return candidates, cand_ids
 
-def ai_track_one_direction(t_seq, ref_start_mask, bf_frame_path_func, lab_seg_path_func, model, device="mps", target_size=128):
+def ai_track_one_direction(t_seq, ref_start_mask, bf_frame_path_func, lab_seg_path_func, model, device="mps", target_size=128, use_probabilistic=True, w_keep_prior=0.35):
     results = {}
     prev_mask = ref_start_mask.copy()
     
@@ -150,7 +150,10 @@ def ai_track_one_direction(t_seq, ref_start_mask, bf_frame_path_func, lab_seg_pa
         
         # Build candidates
         cands, cand_ids = get_candidates(lab_cur, prev_mask)
-        
+        if use_probabilistic:
+            cands.append(prev_mask)
+            cand_ids.append([-1])
+            
         if not cands:
             touch = False
             if prev_mask.any():
@@ -217,6 +220,7 @@ def ai_track_one_direction(t_seq, ref_start_mask, bf_frame_path_func, lab_seg_pa
         cand_details = []
         for idx, (cand_mask, ids) in enumerate(zip(cands, cand_ids)):
             prob = probs[idx]
+            is_keep_prev = (ids == [-1])
             is_pair = (len(ids) == 2)
             
             # Compute geometric scores
@@ -240,10 +244,12 @@ def ai_track_one_direction(t_seq, ref_start_mask, bf_frame_path_func, lab_seg_pa
             area_factor = np.exp(-pen_area * w_area)
             iou_factor = (iou_val ** w_iou)
             
-            score = prob * iou_factor * dist_factor * area_factor * P_topology
+            prior = w_keep_prior if is_keep_prev else 1.0
+            score = prob * iou_factor * dist_factor * area_factor * P_topology * prior
             
             cand_details.append({
                 'ids': ids,
+                'is_keep_prev': is_keep_prev,
                 'is_pair': is_pair,
                 'iou': iou_val,
                 'score': score,
@@ -260,7 +266,7 @@ def ai_track_one_direction(t_seq, ref_start_mask, bf_frame_path_func, lab_seg_pa
         best_ids = best['ids']
         best_score = best['ai_prob']
         
-        composition = 'pair' if best['is_pair'] else 'single'
+        composition = 'keep_prev' if best['is_keep_prev'] else ('pair' if best['is_pair'] else 'single')
         segments_rle = [mask_to_rle(lab_cur == uid) for uid in best_ids] if composition == 'pair' else None
         
         touch = False
@@ -277,14 +283,14 @@ def ai_track_one_direction(t_seq, ref_start_mask, bf_frame_path_func, lab_seg_pa
             'overlap': best['iou'], 
             'score': best['score'],
             'pen': 0.0,
-            'sel_mode': 'ai_tracker',
+            'sel_mode': 'keep_prev' if best['is_keep_prev'] else 'ai_tracker',
             'area': int(best_mask.sum())
         }
         
         prev_mask = best_mask
         centroid_history.append(best['centroid'])
         area_history.append(float(best['area']))
-        comp_history.append(composition)
+        comp_history.append(comp_history[-1] if best['is_keep_prev'] else composition)
         
     return results
 

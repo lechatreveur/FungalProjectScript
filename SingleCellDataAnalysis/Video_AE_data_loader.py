@@ -72,6 +72,16 @@ FILM_FOLDER_MAP = {
     ('M133', 'GFP2', 'F0'): 'YES_Scd1_D_4_F0',
     ('M133', 'GFP2', 'F1'): 'YES_Scd1_D_4_F1',
     ('M133', 'GFP2', 'F2'): 'YES_Scd1_D_4_F2',
+    # M135: GFP1 → FL1, GFP2 → FL2, GFP3 → FL3
+    ('M135', 'GFP1', 'F0'): 'A14_FL1_F0',
+    ('M135', 'GFP2', 'F0'): 'A14_FL2_F0',
+    ('M135', 'GFP3', 'F0'): 'A14_FL3_F0',
+    ('M135', 'GFP1', 'F1'): 'A14_FL1_F1',
+    ('M135', 'GFP2', 'F1'): 'A14_FL2_F1',
+    ('M135', 'GFP3', 'F1'): 'A14_FL3_F1',
+    ('M135', 'GFP1', 'F2'): 'A14_FL1_F2',
+    ('M135', 'GFP2', 'F2'): 'A14_FL2_F2',
+    ('M135', 'GFP3', 'F2'): 'A14_FL3_F2',
 }
 
 EXPERIMENT_BASES = {
@@ -80,7 +90,23 @@ EXPERIMENT_BASES = {
     'M93':        '/Volumes/X10 Pro/Movies/2026_01_08_M93/',
     'June25_20m': '/Volumes/X10 Pro/Movies/2025_06_25/',
     'M133':       '/Volumes/X10 Pro/Movies/2026_04_29_M133/',
+    'M135':       '/Volumes/X10 Pro/Movies/2026_04_30_M135/',
 }
+
+# ==============================================================================
+# ID MAPPING SYSTEM & DATA INTEGRITY WARNING (CRITICAL FOR FUTURE AGENTS)
+# ==============================================================================
+# There are two main types of mapping files on disk:
+# 1. stacked CSV: contains the sequential cell_id (1..N) mapped to the 101-frame time series.
+# 2. ID map CSV: maps the sequential cell_id (new_cell_id) to field, source, and raw cell ID.
+#
+# ⚠️ WARNING: DO NOT filter or change the number of cells in the stacked dataset (e.g. by filtering
+# unlinked pairs). The downstream files (trained Autoencoder weights, video_gids.txt, cycle_stage_scores.npy,
+# and vertical strip PNGs on disk like Sept17_*.png) are tightly coupled to the exact sequential cell_id order
+# of the original dataset. Modifying the stacked dataset size shifts these IDs and misaligns the visualizer assets.
+#
+# Always use the original 320-cell stacked dataset version for Sept17.
+# ==============================================================================
 
 STACKED_CSV_PATHS = {
     'Sept17':     '/Volumes/X10 Pro/Movies/2025_09_17/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
@@ -88,15 +114,16 @@ STACKED_CSV_PATHS = {
     'M93':        '/Volumes/X10 Pro/Movies/2026_01_08_M93/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
     'June25_20m': '/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
     'M133':       '/Volumes/X10 Pro/Movies/2026_04_29_M133/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
+    'M135':       '/Volumes/X10 Pro/Movies/2026_04_30_M135/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv',
 }
 
 ID_MAP_CSV_PATHS = {
-    # Sept17 uses orig_gfp_id column directly in the stacked CSV
-    'Sept17': None,
-    'M92':    '/Volumes/X10 Pro/Movies/2025_12_31_M92/unaligned_pairs_quant/id_map_unaligned.csv',
-    'M93':    '/Volumes/X10 Pro/Movies/2026_01_08_M93/unaligned_pairs_quant/id_map_unaligned.csv',
+    'Sept17':     '/Volumes/X10 Pro/Movies/2025_09_17/unaligned_pairs_quant/id_map_unaligned.csv',
+    'M92':        '/Volumes/X10 Pro/Movies/2025_12_31_M92/unaligned_pairs_quant/id_map_unaligned.csv',
+    'M93':        '/Volumes/X10 Pro/Movies/2026_01_08_M93/unaligned_pairs_quant/id_map_unaligned.csv',
     'June25_20m': '/Volumes/X10 Pro/Movies/2025_06_25/A14_10_20min/unaligned_pairs_quant/id_map_unaligned.csv',
     'M133':       '/Volumes/X10 Pro/Movies/2026_04_29_M133/unaligned_pairs_quant/id_map_unaligned.csv',
+    'M135':       '/Volumes/X10 Pro/Movies/2026_04_30_M135/unaligned_pairs_quant/id_map_unaligned.csv',
 }
 
 
@@ -334,23 +361,32 @@ def resolve_cell_info_sept17(cell_id, df_stacked):
     source = row1['source']  # 'GFP1' or 'GFP2'
     tp = int(row1['tp'])     # 1 or 2
     orig_gfp_id = int(row1['orig_gfp_id'])
-    film_folder_name = FILM_FOLDER_MAP.get(('Sept17', source, tp))
+    field = row1['field'] if 'field' in row1.index else 'F1'
+    if source == 'GFP1' and tp == 1:
+        film_folder_name = f"A14_1TP1_{field}"
+    elif source == 'GFP2' and tp == 2:
+        film_folder_name = f"A14_1TP2_{field}"
+    else:
+        film_folder_name = None
     return film_folder_name, orig_gfp_id
 
 
 def resolve_cell_info_generic(cell_id, df_id_map, exp_label):
     """
-    For M92/M93/June25, use the id_map to get source, field, orig_str_id.
+    For M92/M93/June25/M135, use the id_map to get source, field, orig_str_id.
     Returns (film_folder_name, orig_cell_id_int).
     """
     rows = df_id_map[df_id_map['new_cell_id'] == cell_id]
     if rows.empty:
         return None, None
     row = rows.iloc[0]
-    source = row['source']  # 'GFP1' or 'GFP2'
+    source = row['source']  # 'GFP1', 'GFP2', 'GFP3'
     field  = row['field']   # 'F0', 'F1', 'F2'
-    orig_str = row['orig_str_id']  # e.g. 'F0:11'
-    orig_cell_id = int(orig_str.split(':')[1])
+    if exp_label == 'M135':
+        orig_cell_id = int(row['local_fl_id'])
+    else:
+        orig_str = row['orig_str_id']  # e.g. 'F0:11'
+        orig_cell_id = int(orig_str.split(':')[1])
     film_folder_name = FILM_FOLDER_MAP.get((exp_label, source, field))
     return film_folder_name, orig_cell_id
 
@@ -394,12 +430,12 @@ def load_video_dataset(target_gids, exp_label_map, frame_h=FRAME_H, frame_w=FRAM
             # Parse experiment label and local cell ID
             # Use known experiment labels as prefixes (handles labels with underscores)
             exp_label = None
-            local_cell_id = None
+            suffix = None
             for lbl in known_labels:
                 prefix = lbl + '_'
                 if gid.startswith(prefix):
                     exp_label = lbl
-                    local_cell_id = int(gid[len(prefix):])
+                    suffix = gid[len(prefix):]
                     break
             if exp_label is None:
                 print(f"[skip] Cannot parse experiment from: {gid}")
@@ -412,17 +448,25 @@ def load_video_dataset(target_gids, exp_label_map, frame_h=FRAME_H, frame_w=FRAM
             
             # Resolve film folder and orig cell ID
             if exp_label == 'Sept17':
-                df_stacked = stacked_dfs.get('Sept17')
-                if df_stacked is None:
-                    print(f"[skip] No stacked CSV for {gid}")
-                    continue
-                film_name, orig_id = resolve_cell_info_sept17(local_cell_id, df_stacked)
+                parts = suffix.split('_')
+                if len(parts) == 4:
+                    field = parts[0]
+                    orig_id = int(parts[2])
+                    source = parts[3]
+                    film_name = f"A14_1TP1_{field}" if source == 'GFP1' else f"A14_1TP2_{field}"
+                else:
+                    local_cell_id = int(suffix)
+                    df_stacked = stacked_dfs.get('Sept17')
+                    if df_stacked is None:
+                        print(f"[skip] No stacked CSV for {gid}")
+                        continue
+                    film_name, orig_id = resolve_cell_info_sept17(local_cell_id, df_stacked)
             elif exp_label == 'June25_20m':
-                # June25 doesn't have an ID map, local_id IS the orig_id
-                # and it only has one film: A14_10_20min
+                local_cell_id = int(suffix)
                 film_name = FILM_FOLDER_MAP.get(('June25_20m', 'GFP1', 'F0'))
                 orig_id = local_cell_id
             else:
+                local_cell_id = int(suffix)
                 df_id_map = id_map_dfs.get(exp_label)
                 if df_id_map is None:
                     print(f"[skip] No ID map for {gid}")

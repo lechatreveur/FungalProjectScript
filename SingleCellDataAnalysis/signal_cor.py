@@ -18,6 +18,7 @@ import pandas as pd
 import os as os
 from scipy.optimize import curve_fit
 from SingleCellDataAnalysis.config import WORKING_DIR
+from sklearn.linear_model import LinearRegression
 from SingleCellDataAnalysis.signal_analysis import (
     model_selector_with_threshold,
     
@@ -42,7 +43,7 @@ def quantify_all_cells_xcor(df_all, cell_ids, feature1='pol1_int_corr', feature2
             continue
 
         try:
-            # Detrend both signals
+            # Detrend both signals using model_selector_with_threshold
             y1_trend, _, _ = model_selector_with_threshold(t_valid, y1_valid, N_max=3, delta_threshold=delta_threshold)
             y2_trend, _, _ = model_selector_with_threshold(t_valid, y2_valid, N_max=3, delta_threshold=delta_threshold)
             y1_detrended = (y1_valid - y1_trend)[:, 0]
@@ -143,11 +144,10 @@ def compute_mi_empirical(y_true, y_pred, n_bins=10):
 def compute_sse(y_true, y_pred):
     return 1/np.sum((y_true - y_pred) ** 2)
 
-
-
+def biological_frequency_prior(f, mu=0.07, sigma=0.02):
+    return np.exp(-0.5 * ((f - mu) / sigma)**2)
 def double_exp_osc_model(lags, A1, tau1, tau2, f, phi, C, acf0):
-    #A2 = max(acf0 - A1 - C, 1e-6)
-    A2 = acf0 - A1 - C
+    A2 = np.clip(acf0 - A1 - C, 0.0, 1.0)
     envelope = A1 * np.exp(-lags / tau1) + A2 * np.exp(-lags / tau2) + C
     return envelope * np.cos(2 * np.pi * f * lags + phi)
 
@@ -157,7 +157,7 @@ def run_model_B(lags, acor_vals, n_iter=2000, proposal_width=0.2):
     # Function factory with env toggle
     def fit_model_factory(env=False):
         def fit_model(lags, A1, tau1, tau2, f, phi, C):
-            A2 = acf0 - A1 - C
+            A2 = np.clip(acf0 - A1 - C, 0.0, 1.0)
             envelope = A1 * np.exp(-lags / tau1) + A2 * np.exp(-lags / tau2) + C
             if env:
                 return envelope
@@ -170,29 +170,28 @@ def run_model_B(lags, acor_vals, n_iter=2000, proposal_width=0.2):
         fit_model = fit_model_factory(env=False)
         popt, _ = curve_fit(
             fit_model, lags, acor_vals,
-            p0=[acf0 * 0.3, 5, 15, 0.05, 0.0, acf0 * 0.1],
-            bounds=([-np.inf, 1e-2, 1e-2, 1e-3, 0, -np.inf],
-                    [np.inf, 1e3, 1e3, 1.0, 2*np.pi, np.inf])
+            p0=[max(acf0 * 0.3, 0.01), 5, 15, 0.05, 0.01, acf0 * 0.1],
+            bounds=([0.0, 1e-2, 1e-2, 1e-3, 0, -np.inf],
+                    [1.0, 1e3, 1e3, 1.0, 2*np.pi, np.inf])
         )
         print(f"[CurveFit B] Success: A1={popt[0]:.4f}, tau1={popt[1]:.2f}, tau2={popt[2]:.2f}, "
               f"f={popt[3]:.4f}, φ={popt[4]:.2f}, C={popt[5]:.4f}")
     except Exception as e:
         print(f"⚠️ [CurveFit B] Failed: {e}")
-        popt = [acf0 * 0.3, 5, 15, 0.05, 0.0, acf0 * 0.1]
+        popt = [0.0, 10.0, 10.0, 0.05, 0.0, 0.0]
     mi_values = []
     freq_range = np.linspace(0.01, 0.2, 500)
     for f in freq_range:
         params = [popt[0], popt[1], popt[2], f, popt[4], popt[5], acf0]
         mu_f = double_exp_osc_model(lags, *params)
-        #mi_f = compute_mi_empirical(acor_vals, mu_f)
-        mi_f = compute_sse(acor_vals, mu_f)
+        mi_f = compute_sse(acor_vals, mu_f) * biological_frequency_prior(f)
         mi_values.append(mi_f)
     
     mi_values = np.array(mi_values)
     max_idx = np.argmax(mi_values)
     best_freq = freq_range[max_idx]
     best_params = [popt[0], popt[1], popt[2], best_freq, popt[4], popt[5], acf0]
-    
+    return freq_range, mi_values, best_params
     # # Envelope extraction
     # envelope_func = fit_model_factory(env=True)
     # envelope_at_popt_f = envelope_func(lags, *popt)
@@ -242,10 +241,10 @@ def run_model_C_symmetric(lags, cor_vals, n_iter=2000, proposal_width=0.2):
         fit_model = fit_model_factory(env=False)
         popt, _ = curve_fit(
             fit_model, lags, cor_vals,
-            p0=[acf0 * 0.3, 10, 0.05, 0.0, acf0 * 0.1],
+            p0=[max(acf0 * 0.3, 0.01), 10, 0.05, 0.01, acf0 * 0.1],
             #bounds=([-np.inf, 1e-2, 1e-3, 0, -np.inf],
             #        [np.inf, 1e3, 1.0, 2 * np.pi, np.inf]),
-            bounds=([-1, 1e-2, 1e-3, 0, -1],
+            bounds=([0.0, 1e-2, 1e-3, 0, -1],
                     [1, 1e3, 1.0, 2 * np.pi, 1]),
             maxfev=10000
         )
@@ -262,20 +261,20 @@ def run_model_C_symmetric(lags, cor_vals, n_iter=2000, proposal_width=0.2):
     safe_envelope = np.clip(envelope_at_popt, 1e-6, None)
     log_evidence = np.sum(norm.logpdf(cor_vals, loc=np.mean(cor_vals),
                                       scale=np.std(cor_vals)))# * safe_envelope))
-    
     mi_values = []
     freq_range = np.linspace(0.01, 0.2, 500)
     for f in freq_range:
         params = [popt[0], popt[1], f, popt[3], popt[4]]
         mu_f = single_gaussian_osc_model(lags, *params)
-        #mi_f = compute_mi_empirical(cor_vals, mu_f)
-        mi_f = compute_sse(cor_vals, mu_f)
+        mi_f = compute_sse(cor_vals, mu_f) * biological_frequency_prior(f)
         mi_values.append(mi_f)
     
     mi_values = np.array(mi_values)
     max_idx = np.argmax(mi_values)
     best_freq = freq_range[max_idx]
     best_params = [popt[0], popt[1], best_freq, popt[3], popt[4]]
+    return freq_range, mi_values, best_params
+
     # # Posterior over frequency
     # freq_range = np.linspace(0.01, 0.1, 500)
     # log_posteriors = []
@@ -330,8 +329,11 @@ def quantify_all_cells_acor(df_all, cell_ids,
             center_idx1 = len(acor1) // 2
             acor1_zero = acor1[center_idx1]
             
-            # ✅ Normalize autocorrelation
-            acor1 = acor1 / acor1_zero
+            # ✅ Normalize autocorrelation with division safety check
+            if acor1_zero > 1e-8:
+                acor1 = acor1 / acor1_zero
+            else:
+                acor1 = np.zeros_like(acor1)
             acor1_pos = acor1[center_idx1 + 1:]
             pos_lags1 = lags1[center_idx1 + 1:]
             
@@ -349,8 +351,11 @@ def quantify_all_cells_acor(df_all, cell_ids,
             center_idx2 = len(acor2) // 2
             acor2_zero = acor2[center_idx2]
             
-            # ✅ Normalize autocorrelation
-            acor2 = acor2 / acor2_zero
+            # ✅ Normalize autocorrelation with division safety check
+            if acor2_zero > 1e-8:
+                acor2 = acor2 / acor2_zero
+            else:
+                acor2 = np.zeros_like(acor2)
             acor2_pos = acor2[center_idx2 + 1:]
             pos_lags2 = lags2[center_idx2 + 1:]
             
@@ -365,9 +370,12 @@ def quantify_all_cells_acor(df_all, cell_ids,
             lags = np.arange(-len(y1_detrended) + 1, len(y1_detrended))
             #center_idx = len(xcor) // 2
             
-            # ✅ Normalize cross-correlation
+            # ✅ Normalize cross-correlation with division safety check
             norm_factor = np.linalg.norm(y1_detrended) * np.linalg.norm(y2_detrended)
-            xcor = xcor / norm_factor
+            if norm_factor > 1e-8:
+                xcor = xcor / norm_factor
+            else:
+                xcor = np.zeros_like(xcor)
             
             #xcor_zero_lag = xcor[center_idx]
 
@@ -416,12 +424,88 @@ def quantify_all_cells_acor(df_all, cell_ids,
             # Sum or average
             #distance_sum = d12 + d1x + d2x
             
-            # Horizontal lines at precision peaks
-            y_f1 = p1[np.argmin(np.abs(f1 - best_f1))]
-            y_f2 = p2[np.argmin(np.abs(f2 - best_f2))]
-            y_fx = px[np.argmin(np.abs(fx - best_fx))]
-            precision_sum = y_f1 + y_f2 + y_fx
+            # Horizontal lines at precision peaks (raw fit goodness)
+            y_f1_raw = p1[np.argmin(np.abs(f1 - best_f1))]
+            y_f2_raw = p2[np.argmin(np.abs(f2 - best_f2))]
+            y_fx_raw = px[np.argmin(np.abs(fx - best_fx))]
             
+            # Extract tau1, tau2 from trace_1 and calculate decay penalty
+            tau1_1, tau2_1 = trace_1[1], trace_1[2]
+            tau_eff_1 = max(tau1_1, tau2_1)
+            decay_factor_1 = 1 - np.exp(-tau_eff_1 / 10.0)
+            
+            # Amplitude penalty for Pol1 (A of longer tau)
+            A1_1 = trace_1[0]
+            C_1 = trace_1[5]
+            acf0_1 = trace_1[6]
+            A2_1 = acf0_1 - A1_1 - C_1
+            A_long_1 = A1_1 if tau1_1 >= tau2_1 else A2_1
+            amp_factor_1 = 1 - np.exp(-max(A_long_1, 0.0) / 0.2)
+
+            # Extract tau1, tau2 from trace_2 and calculate decay penalty
+            tau1_2, tau2_2 = trace_2[1], trace_2[2]
+            tau_eff_2 = max(tau1_2, tau2_2)
+            decay_factor_2 = 1 - np.exp(-tau_eff_2 / 10.0)
+            
+            # Amplitude penalty for Pol2 (A of longer tau)
+            A1_2 = trace_2[0]
+            C_2 = trace_2[5]
+            acf0_2 = trace_2[6]
+            A2_2 = acf0_2 - A1_2 - C_2
+            A_long_2 = A1_2 if tau1_2 >= tau2_2 else A2_2
+            amp_factor_2 = 1 - np.exp(-max(A_long_2, 0.0) / 0.2)
+
+            # Extract sigma from trace_x and calculate decay penalty
+            sigma_x = trace_x[1]
+            decay_factor_x = 1 - np.exp(-sigma_x / 10.0)
+            
+            # Amplitude penalty for xcor (A of cross-correlation)
+            A_x = trace_x[0]
+            amp_factor_x = 1 - np.exp(-max(A_x, 0.0) / 0.2)
+
+            # Standard deviation penalty to suppress low-amplitude flat noise
+            std_ref = 0.8
+            std_penalty_1 = min(np.std(y1_detrended) / std_ref, 1.0)
+            std_penalty_2 = min(np.std(y2_detrended) / std_ref, 1.0)
+            std_penalty_x = np.sqrt(std_penalty_1 * std_penalty_2)
+
+            # Detrend fit goodness penalty (relative SSE / unexplained variance ratio)
+            ratio_ref = 0.3
+            sst1 = np.sum((y1_valid[:, 0] - np.mean(y1_valid))**2)
+            ratio1 = np.sum(y1_detrended**2) / sst1 if sst1 > 1e-8 else 0.0
+            detrend_penalty_1 = min(ratio1 / ratio_ref, 1.0)
+
+            sst2 = np.sum((y2_valid[:, 0] - np.mean(y2_valid))**2)
+            ratio2 = np.sum(y2_detrended**2) / sst2 if sst2 > 1e-8 else 0.0
+            detrend_penalty_2 = min(ratio2 / ratio_ref, 1.0)
+
+            # Apply biological frequency prior after frequency selection
+            prior_1 = biological_frequency_prior(best_f1)
+            prior_2 = biological_frequency_prior(best_f2)
+            prior_x = biological_frequency_prior(best_fx)
+
+            y_f1_penalized = y_f1_raw * prior_1
+            y_f2_penalized = y_f2_raw * prior_2
+            y_fx_penalized = y_fx_raw * prior_x
+
+            precision_sum = y_f1_penalized + y_f2_penalized # + y_fx_penalized
+            raw_precision_sum = y_f1_raw + y_f2_raw
+            
+            # SSE of ACF variance from its envelope (baseline of non-oscillatory decay)
+            A2_1 = np.clip(acf0_1 - A1_1 - C_1, 0.0, 1.0)
+            env1 = A1_1 * np.exp(-pos_lags1 / tau1_1) + A2_1 * np.exp(-pos_lags1 / tau2_1) + C_1
+            sse_zero_1 = np.sum((acor1_pos - env1) ** 2)
+
+            A2_2 = np.clip(acf0_2 - A1_2 - C_2, 0.0, 1.0)
+            env2 = A1_2 * np.exp(-pos_lags2 / tau1_2) + A2_2 * np.exp(-pos_lags2 / tau2_2) + C_2
+            sse_zero_2 = np.sum((acor2_pos - env2) ** 2)
+
+            # Weighted inverse baseline envelope fit errors (to match the dimension of precision_sum)
+            term_1 = (prior_1 / sse_zero_1) if sse_zero_1 > 1e-8 else (prior_1 / 1e-8)
+            term_2 = (prior_2 / sse_zero_2) if sse_zero_2 > 1e-8 else (prior_2 / 1e-8)
+            sse_zero = term_1 + term_2
+            log_zero = np.log(sse_zero) if sse_zero > 1e-8 else -10.0
+
             A, sigma, f, phi, C = trace_x
             score = -(A+C)#(np.exp(-(A+C))-1)*(sigma/10+np.abs(C))#+precision_sum#np.log(y_fx))
             # print(-(A+C))
@@ -431,10 +515,44 @@ def quantify_all_cells_acor(df_all, cell_ids,
             
             records.append({
                 'cell_id': cell_id,
-                'freq_distance_sum': np.log(freq_distance_sum),
+                'freq_distance_sum': log_zero,
                 'precision_sum': np.log(precision_sum),
+                'raw_freq_distance_sum': sse_zero,
+                'raw_precision_sum': raw_precision_sum,
                 'NC_score': score,
-     
+                
+                # Pol1 fit params
+                'pol1_A1': A1_1,
+                'pol1_tau1': tau1_1,
+                'pol1_tau2': tau2_1,
+                'pol1_f': best_f1,
+                'pol1_phi': trace_1[4],
+                'pol1_C': C_1,
+                'pol1_acf0': acf0_1,
+
+                # Pol2 fit params
+                'pol2_A1': A1_2,
+                'pol2_tau1': tau1_2,
+                'pol2_tau2': tau2_2,
+                'pol2_f': best_f2,
+                'pol2_phi': trace_2[4],
+                'pol2_C': C_2,
+                'pol2_acf0': acf0_2,
+
+                # Penalties and precision components
+                'pol1_y_f': y_f1_raw,
+                'pol1_freq_prior': prior_1,
+                'pol1_decay_factor': decay_factor_1,
+                'pol1_std_penalty': std_penalty_1,
+                'pol1_detrend_penalty': detrend_penalty_1,
+                'pol1_penalized': y_f1_penalized,
+
+                'pol2_y_f': y_f2_raw,
+                'pol2_freq_prior': prior_2,
+                'pol2_decay_factor': decay_factor_2,
+                'pol2_std_penalty': std_penalty_2,
+                'pol2_detrend_penalty': detrend_penalty_2,
+                'pol2_penalized': y_f2_penalized,
             })
 
 
@@ -571,19 +689,19 @@ def quantify_all_cells_acor(df_all, cell_ids,
                 axs[2, 0].legend(loc='lower center', bbox_to_anchor=(0.5, 1.15),
                                  ncol=3, fontsize='small', frameon=False)
 
-                def plot_fit(ax, lags, acor, trace_B, title, label):
-                    ax.plot(lags, acor, label=label, lw=1.5)
+                def plot_fit(ax, lags, acor, trace_B, title, label, color):
+                    ax.plot(lags, acor, label=label + ' Raw', color=color, alpha=0.3, lw=1.5)
                     ax.axvline(x=0, color='k', linestyle='--', lw=1)
                 
                     # Exponential model (updated for double exponential)
                     acf0 = acor[0]
                     pred_b = double_exp_osc_model(lags, *trace_B)
-                    ax.plot(lags, pred_b, 'r-', label='Fit of MAP f')
+                    ax.plot(lags, pred_b, color=color, linestyle='--', label=label + ' Fit', lw=1.5)
                     ax.set_title(title)
                     #ax.legend()
              
-                plot_fit(axs[0, 1], pos_lags1, acor1_pos, trace_1, 'pol1 Best Fit', 'Autocorrelation')
-                plot_fit(axs[1, 1], pos_lags2, acor2_pos, trace_2, 'pol2 Best Fit', 'Autocorrelation')
+                plot_fit(axs[0, 1], pos_lags1, acor1_pos, trace_1, 'pol1 Best Fit', 'Autocorrelation', color='#ef4444')
+                plot_fit(axs[1, 1], pos_lags2, acor2_pos, trace_2, 'pol2 Best Fit', 'Autocorrelation', color='#3b82f6')
                 #plot_fit(axs[2, 1], pos_lags, xcor_pos, trace_x, 'Xcor Best Fit', 'Crosscorrelation')
 
 

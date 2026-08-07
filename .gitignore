@@ -34,3 +34,23 @@ training_progress.log
 checkpoints/
 checkpoints_binary/
 SingleCellQuantificationHPC/logs/
+
+# Cache, Logs, and Temp Files
+*.log
+training.log
+*.pkl
+*.bak
+*.png
+
+*.jpg
+*.jpeg
+logs/
+backup/
+archive/
+data/
+censoring_run_checkpoint/
+lineage_dataset*/
+lineage_model*/
+tracker_checkpoints*/
+segment-anything-2/
+

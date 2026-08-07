@@ -13,7 +13,7 @@ import shutil
 
 
 # Function to create a SLURM job script for a single cell ID
-def create_cell_job_script(job_id, cell_id, working_dir, script_path,experiment_path,file_name,z_index, min_area, channel, update_existing=False, direction='both'):
+def create_cell_job_script(job_id, cell_id, working_dir, script_path,experiment_path,file_name,z_index, min_area, channel, update_existing=False, direction='both', job_name_prefix=''):
     logs_dir = os.path.join(working_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
 
@@ -21,12 +21,13 @@ def create_cell_job_script(job_id, cell_id, working_dir, script_path,experiment_
     update_flag = "--update_existing" if update_existing else ""
     with open(job_script_path, 'w') as job_file:
         job_file.write(f"""#!/bin/bash
-#SBATCH --job-name=cell_{cell_id}
+#SBATCH --job-name={job_name_prefix}cell_{cell_id}
 #SBATCH --output={logs_dir}/cell_{cell_id}.out
 #SBATCH --error={logs_dir}/cell_{cell_id}.err
 #SBATCH --mem=8G
 #SBATCH --cpus-per-task=4
 
+set -euo pipefail
 
 if [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
     source "$HOME/miniforge3/etc/profile.d/conda.sh"
@@ -38,12 +39,13 @@ else
     source ~/.bashrc
     conda activate cellpose_env
 fi
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
 cd {working_dir}
 
 
 
 
-python {script_path} --cell_id {cell_id} --experiment_path {experiment_path} --file_name {file_name} --track_channel {channel} {update_flag}
+python {script_path} --cell_id {cell_id} --experiment_path {experiment_path} --file_name {file_name} --track_channel {channel} --min_area {min_area} --direction {direction} {update_flag}
 
 
 
@@ -81,6 +83,8 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--min_area', type=int, default=2500, help="Minimal cell area.")
     parser.add_argument('--update_existing', action='store_true', help="Retrack cells with masks files.")
     parser.add_argument('--direction', choices=['forward', 'backward', 'both'], default='forward', help="Tracking direction.")
+    parser.add_argument('--job-name-prefix', default='', help="Prefix for generated SLURM job names.")
+    parser.add_argument('--job-id-file', default='', help="Append submitted file_name, cell_id, and SLURM job ID here.")
     parser.add_argument(
         '--submit',
         choices=['auto', 'slurm', 'none', 'local'],
@@ -98,7 +102,20 @@ if __name__ == "__main__":
     os.makedirs(args.working_dir, exist_ok=True)
 
     for i, cell_id in enumerate(cell_ids, start=1):
-        job_script = create_cell_job_script(i, cell_id, args.working_dir, args.script_path, args.experiment_path, args.file_name, args.z_index, args.min_area, args.channel, update_existing=args.update_existing, direction=args.direction)
+        job_script = create_cell_job_script(
+            i,
+            cell_id,
+            args.working_dir,
+            args.script_path,
+            args.experiment_path,
+            args.file_name,
+            args.z_index,
+            args.min_area,
+            args.channel,
+            update_existing=args.update_existing,
+            direction=args.direction,
+            job_name_prefix=args.job_name_prefix,
+        )
         mode = args.submit
         has_sbatch = shutil.which("sbatch") is not None
         
@@ -108,8 +125,12 @@ if __name__ == "__main__":
         if mode == 'slurm':
             if not has_sbatch:
                 raise FileNotFoundError("sbatch not found. Use --submit none or --submit local on non-SLURM systems.")
-            subprocess.run(["sbatch", job_script], check=True)
-            print(f"Submitted job for cell {cell_id}.")
+            result = subprocess.run(["sbatch", "--parsable", job_script], check=True, capture_output=True, text=True)
+            job_id = result.stdout.strip().split(";", 1)[0]
+            print(f"Submitted job {job_id} for cell {cell_id}.")
+            if args.job_id_file:
+                with open(args.job_id_file, "a", encoding="utf-8") as job_ids:
+                    job_ids.write(f"{args.file_name}\t{cell_id}\t{job_id}\n")
             check_slurm_queue(args.num_jobs - 1, args.delay)
         
         elif mode == 'local':

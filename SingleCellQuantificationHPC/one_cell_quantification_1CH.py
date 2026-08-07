@@ -12,6 +12,7 @@ Created on Tue Sep 23 12:17:48 2025
 import os
 import sys
 import re
+import shutil
 import argparse
 import numpy as np
 import pandas as pd
@@ -554,6 +555,15 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
     if need_to_track:
         masks_csv_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Safety net: back up any pre-existing masks CSV before an --update_existing
+        # retrack overwrites it (e.g. switching a GFP film from ai_tracker output to
+        # the deterministic tracker). Only keeps one backup; won't clobber an earlier one.
+        if args.update_existing and is_valid_csv(masks_csv_path):
+            bak_path = masks_csv_path.with_suffix(masks_csv_path.suffix + ".bak")
+            if not bak_path.exists():
+                shutil.copy2(masks_csv_path, bak_path)
+                print(f"[track] Backed up existing masks CSV to: {bak_path}")
+
         # 1) Seed mask initialization
         if args.seed_from_csv and is_valid_csv(masks_csv_path):
             print(f"[track] Seeding from existing CSV at t=0: {masks_csv_path}")
@@ -573,54 +583,68 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
             initial_mask = (labeled_mask == cell_id)
 
         # 2) Tracking in detected channel only
-        import torch
-        from tracker_model import load_tracker
-        from ai_tracking_inference import ai_track_one_direction
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
-        # Resolve the base directory for checkpoints
-        # Candidates checked in order: local SSD, NAS, and fallback to script directory.
-        ai_dirs = [
-            "/Volumes/X10 Pro/Movies/AI",
-            "/X10 Pro/Movies/AI",
-            "/Volumes/Movies/AI",
-            os.path.dirname(os.path.abspath(__file__))
-        ]
-        
-        base_ai_dir = None
-        for path in ai_dirs:
-            if os.path.isdir(path):
-                folder_name = "tracker_checkpoints_m93_gfp" if track_channel == 'gfp' else "tracker_checkpoints"
-                if os.path.isdir(os.path.join(path, folder_name)):
-                    base_ai_dir = path
-                    break
-        
-        if base_ai_dir is None:
-            base_ai_dir = os.path.dirname(os.path.abspath(__file__))
-            
         if track_channel == 'gfp':
-            ckpt_path = os.path.join(base_ai_dir, "tracker_checkpoints_m93_gfp", "model_latest.pt")
-            cache_key = 'one_cell_quantification_model_cache_gfp'
+            # FL/GFP: use the deterministic overlap + area-penalty tracker instead of the
+            # learned ai_tracker. The ai_tracker's GFP checkpoint (tracker_checkpoints_m93_gfp)
+            # was trained exclusively on M93 GFP data and has never seen this experiment's
+            # fluorescence imaging conditions -- pure out-of-domain inference, and the checkpoint
+            # also shows an overfitting signature in its own training history. The deterministic
+            # selector needs no learned model, so it isn't exposed to that cross-experiment
+            # domain-shift failure mode. (See project memory: m156_fl_tracking_domain_mismatch.)
+            print("[track] GFP channel: using deterministic overlap+area-penalty tracker (track_one_direction).")
+            forward_sel = track_one_direction(
+                t_seq=list(range(frame_number)),
+                ref_start_mask=initial_mask,
+                channel='gfp',
+            )
+            backward_sel = None
         else:
+            import torch
+            from tracker_model import load_tracker
+            from ai_tracking_inference import ai_track_one_direction
+            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            # Resolve the base directory for checkpoints
+            # Candidates checked in order: local SSD, NAS, and fallback to script directory.
+            ai_dirs = [
+                "/Volumes/X10 Pro/Movies/AI",
+                "/X10 Pro/Movies/AI",
+                "/Volumes/Movies/AI",
+                os.path.dirname(os.path.abspath(__file__))
+            ]
+
+            base_ai_dir = None
+            for path in ai_dirs:
+                if os.path.isdir(path):
+                    folder_name = "tracker_checkpoints"
+                    if os.path.isdir(os.path.join(path, folder_name)):
+                        base_ai_dir = path
+                        break
+
+            if base_ai_dir is None:
+                base_ai_dir = os.path.dirname(os.path.abspath(__file__))
+
             ckpt_path = os.path.join(base_ai_dir, "tracker_checkpoints", "model_latest.pt")
             cache_key = 'one_cell_quantification_model_cache'
 
-        if cache_key in sys.modules:
-            model = sys.modules[cache_key]
-        else:
-            print(f"Loading AI Tracker Model ({track_channel}) from {ckpt_path}...")
-            model = load_tracker(ckpt_path, device=device)
-            model.eval()
-            sys.modules[cache_key] = model
-        print("Running AI Tracker inference...")
-        forward_sel = ai_track_one_direction(
-            t_seq=list(range(frame_number)),
-            ref_start_mask=initial_mask,
-            bf_frame_path_func=bf_frame_path,
-            lab_seg_path_func=_seg_path_any_ext,
-            model=model,
-            device=device
-        )
-        backward_sel = None
+            if cache_key in sys.modules:
+                model = sys.modules[cache_key]
+            else:
+                print(f"Loading AI Tracker Model ({track_channel}) from {ckpt_path}...")
+                model = load_tracker(ckpt_path, device=device)
+                model.eval()
+                sys.modules[cache_key] = model
+            print("Running AI Tracker inference...")
+            forward_sel = ai_track_one_direction(
+                t_seq=list(range(frame_number)),
+                ref_start_mask=initial_mask,
+                bf_frame_path_func=bf_frame_path,
+                lab_seg_path_func=_seg_path_any_ext,
+                model=model,
+                device=device,
+                use_probabilistic=True,
+                w_keep_prior=0.35
+            )
+            backward_sel = None
 
         # 3) Reconcile per frame & save masks CSV (populate only selected channel columns)
         combined = []
@@ -685,7 +709,7 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
                     "composition_gfp": comp,
                     "pair_segA_rle_gfp": pair_a_str,
                     "pair_segB_rle_gfp": pair_b_str,
-                    "selector_mode_gfp": ch_sel.get("selector_mode", ""),
+                    "selector_mode_gfp": ch_sel.get("selector_mode", ch_sel.get("sel_mode", "")),
                 })
             else:  # BF
                 row.update({
@@ -701,7 +725,7 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
                     "composition_bf": comp,
                     "pair_segA_rle_bf": pair_a_str,
                     "pair_segB_rle_bf": pair_b_str,
-                    "selector_mode_bf": ch_sel.get("selector_mode", ""),
+                    "selector_mode_bf": ch_sel.get("selector_mode", ch_sel.get("sel_mode", "")),
                 })
         
             combined.append(row)

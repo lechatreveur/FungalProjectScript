@@ -2,6 +2,10 @@
 
 Welcome to the **Fungal Project Single Cell Data Analysis Pipeline**. This repository houses the complete deep-learning workflow utilized for semantic segmentation, cell crop extraction, and binary temporal classification of fungal structural checkpoints (e.g. tracking Start/End Septums during growth processes).
 
+For a concise map of the active workflow and script naming conventions, see
+[`PROJECT_MAP.md`](PROJECT_MAP.md). Superseded scripts are retained with explanations
+under [`archive/`](archive/).
+
 ## 🔬 Scientific Context
 This pipeline aims to systematically convert raw high-throughput multichannel movies of dividing fungal cells into analyzable, predictable mathematical matrices. 
 By utilizing Multi-Instance Learning (MIL) built on PyTorch, this package can consume variable-sized `[L, 1, H, W]` strips of bounding-box tracked fungal cells and temporally predict whether specific division artifacts (start and end endpoints) exist within entirely isolated crops.

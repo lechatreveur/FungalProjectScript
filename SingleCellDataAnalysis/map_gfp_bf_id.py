@@ -178,7 +178,16 @@ def map_gfp_to_bf_ids(
         try:
             df = pd.read_csv(fp)
             row = _pick_time_row(df, which=gfp_timepoint, time_col=time_col, time_col_candidates=time_col_candidates)
-            ints = _to_intervals(row[gfp_rle_col])
+            
+            # Robust dynamic column lookup
+            rle_col = gfp_rle_col
+            if rle_col not in row:
+                for col in ['rle_gfp', 'rle_bf']:
+                    if col in row and isinstance(row[col], str) and row[col].strip():
+                        rle_col = col
+                        break
+            
+            ints = _to_intervals(row[rle_col])
             if ints:
                 g_ids.append(_extract_cell_id_from_filename(fp))
                 g_ints.append(ints)
@@ -191,7 +200,16 @@ def map_gfp_to_bf_ids(
         try:
             df = pd.read_csv(fp)
             row = _pick_time_row(df, which=bf_timepoint, time_col=time_col, time_col_candidates=time_col_candidates)
-            ints = _to_intervals(row[bf_rle_col])
+            
+            # Robust dynamic column lookup
+            rle_col = bf_rle_col
+            if rle_col not in row:
+                for col in ['rle_bf', 'rle_gfp']:
+                    if col in row and isinstance(row[col], str) and row[col].strip():
+                        rle_col = col
+                        break
+                        
+            ints = _to_intervals(row[rle_col])
             if ints:
                 b_ids.append(_extract_cell_id_from_filename(fp))
                 b_ints.append(ints)

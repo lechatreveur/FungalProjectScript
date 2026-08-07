@@ -8,6 +8,7 @@ Created on Thu Feb 19 17:16:37 2026
 
 #!/usr/bin/env python3
 import argparse
+import fnmatch
 import re
 from pathlib import Path
 import numpy as np
@@ -66,7 +67,14 @@ def warp_image(img: np.ndarray, warp: np.ndarray, size_wh, interp, border_mode, 
         borderValue=border_value
     )
 
-def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float, align_by_masks: bool = False):
+def stabilize_film(
+    film_dir: Path,
+    dry_run: bool,
+    max_iters: int,
+    eps: float,
+    align_by_masks: bool = False,
+    max_shift: float | None = None,
+):
     frames_dirs = [p for p in film_dir.iterdir() if p.is_dir() and p.name.startswith("Frames_")]
     masks_dirs  = [p for p in film_dir.iterdir() if p.is_dir() and p.name.startswith("Masks_")]
 
@@ -124,6 +132,11 @@ def stabilize_film(film_dir: Path, dry_run: bool, max_iters: int, eps: float, al
         tx = warp[0, 2]
         ty = warp[1, 2]
         print(f"  {fpath.name}: dx={tx:.3f}, dy={ty:.3f}")
+        if max_shift is not None and (abs(float(tx)) > max_shift or abs(float(ty)) > max_shift):
+            raise RuntimeError(
+                f"Shift exceeds safety limit ({max_shift}px) for {fpath.name}: "
+                f"dx={tx:.3f}, dy={ty:.3f}"
+            )
 
         # Warp frame
         stabilized_frame = warp_image(
@@ -173,6 +186,10 @@ def main():
     ap.add_argument("--max-iters", type=int, default=200, help="ECC max iterations.")
     ap.add_argument("--eps", type=float, default=1e-6, help="ECC convergence epsilon.")
     ap.add_argument("--align-by-masks", action="store_true", help="Align images based on segmentations/masks instead of BF images.")
+    ap.add_argument("--include", action="append", default=[], help="Film-directory glob to include.")
+    ap.add_argument("--exclude", action="append", default=[], help="Film-directory glob to exclude.")
+    ap.add_argument("--max-shift", type=float, default=None, help="Fail if |dx| or |dy| exceeds this many pixels.")
+    ap.add_argument("--marker-name", default="DONE_stabilization.txt", help="Per-film idempotency marker filename.")
     args = ap.parse_args()
 
     wd = Path(args.working_dir)
@@ -186,18 +203,40 @@ def main():
         # Each film is a subfolder inside working_dir
         film_dirs = sorted([p for p in wd.iterdir() if p.is_dir()])
 
+    include_patterns = args.include or ["*"]
+    film_dirs = [
+        p for p in film_dirs
+        if any(fnmatch.fnmatch(p.name, pattern) for pattern in include_patterns)
+        and not any(fnmatch.fnmatch(p.name, pattern) for pattern in args.exclude)
+    ]
+
     total = 0
+    failures = 0
     for film_dir in film_dirs:
         # Skip directories like done_movies, population_movies, etc.
         if film_dir.name in ["done_movies", "population_movies"]:
             continue
+        marker = film_dir / args.marker_name
+        if marker.exists():
+            print(f"Skipping {film_dir.name}: marker exists at {marker}")
+            continue
         try:
             print(f"Processing film directory: {film_dir.name}")
-            n = stabilize_film(film_dir, dry_run=args.dry_run, max_iters=args.max_iters, eps=args.eps, align_by_masks=args.align_by_masks)
+            n = stabilize_film(
+                film_dir,
+                dry_run=args.dry_run,
+                max_iters=args.max_iters,
+                eps=args.eps,
+                align_by_masks=args.align_by_masks,
+                max_shift=args.max_shift,
+            )
             if n > 0:
                 print(f"Finished {film_dir.name}: stabilized {n} frames (+ masks)")
+                if not args.dry_run:
+                    marker.write_text("completed\n", encoding="utf-8")
             total += n
         except Exception as e:
+            failures += 1
             print(f"[ERROR] {film_dir.name}: {e}")
             import traceback
             traceback.print_exc()
@@ -205,6 +244,8 @@ def main():
     print(f"Done. Films processed: {len(film_dirs)}. Frames stabilized: {total}.")
     if args.dry_run:
         print("Dry run only: no files were overwritten.")
+    if failures:
+        raise SystemExit(f"Stabilization failed for {failures} film(s).")
 
 if __name__ == "__main__":
     main()

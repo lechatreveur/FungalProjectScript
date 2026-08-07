@@ -1,0 +1,84 @@
+server:
+  host: 127.0.0.1
+  port: 5001
+  debug: false
+  secret_key: "dev-tracking-corrector-secret-key-change-in-lab-server"
+
+movie_roots:
+  local: "/Volumes/X10 Pro/Movies"
+  nas: "/Volumes/Movies"
+
+experiments:
+  "2026_07_16_M156":
+    enabled: true
+    display_name: "M156"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    masks_dir_template: "Masks_{film}"
+    channels:
+      - bf
+      - gfp
+  "2026_04_30_M135":
+    enabled: true
+    display_name: "M135"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    masks_dir_template: "Masks_{film}"
+    channels:
+      - bf
+      - gfp
+  "2025_09_17":
+    enabled: true
+    display_name: "Sept17"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    masks_dir_template: "Masks_{film}"
+    channels:
+      - bf
+      - gfp
+  "2026_04_29_M133":
+    enabled: true
+    display_name: "M133"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    masks_dir_template: "Masks_{film}"
+    channels:
+      - bf
+      - gfp
+  "2026_04_23_M130":
+    enabled: true
+    display_name: "M130"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    channels:
+      - bf
+      - gfp
+  "2026_01_16_M96":
+    enabled: true
+    display_name: "M96"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    channels:
+      - bf
+  "2026_01_08_M93":
+    enabled: true
+    display_name: "M93"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    channels:
+      - bf
+  "2025_12_31_M92":
+    enabled: true
+    display_name: "M92"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    channels:
+      - bf

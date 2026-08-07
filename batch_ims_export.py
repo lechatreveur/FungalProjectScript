@@ -4,6 +4,7 @@
 import os
 import gc
 import fnmatch
+import argparse
 import numpy as np
 from tifffile import imread, imwrite
 from tqdm import tqdm
@@ -131,7 +132,39 @@ def process_ims_file(ims_path):
     write_video_from_frames(frames_dir, frame_names, movie_path, fps, gmin, gmax)
 
 # ---------- Batch ----------
+def select_ims_files(directory, include_patterns=None, exclude_patterns=None):
+    include_patterns = include_patterns or ["*.ims"]
+    exclude_patterns = exclude_patterns or []
+    selected = []
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".ims") or name.startswith("._"):
+            continue
+        if not any(fnmatch.fnmatch(name, pattern) for pattern in include_patterns):
+            continue
+        if any(fnmatch.fnmatch(name, pattern) for pattern in exclude_patterns):
+            continue
+        selected.append(name)
+    return selected
+
+
 if __name__ == "__main__":
-    ims_files = [f for f in os.listdir(working_dir) if f.endswith(".ims") and not f.startswith("._")]
+    parser = argparse.ArgumentParser(description="Export selected IMS files to TIFF frames and preview movies.")
+    parser.add_argument("working_dir", nargs="?", default=working_dir, help="Directory containing IMS files")
+    parser.add_argument("--include", action="append", default=[], help="Filename glob to include")
+    parser.add_argument("--exclude", action="append", default=[], help="Filename glob to exclude")
+    parser.add_argument("--list-only", action="store_true", help="Print selected files without exporting")
+    args = parser.parse_args()
+
+    working_dir = os.path.abspath(args.working_dir)
+    ims_files = select_ims_files(working_dir, args.include, args.exclude)
+    print(f"Selected {len(ims_files)} IMS file(s) in {working_dir}:")
+    for name in ims_files:
+        print(f"  {name}")
+
+    if args.list_only:
+        raise SystemExit(0)
+    if not ims_files:
+        raise SystemExit(f"No IMS files matched the requested filters in: {working_dir}")
+
     for f in ims_files:
         process_ims_file(os.path.join(working_dir, f))

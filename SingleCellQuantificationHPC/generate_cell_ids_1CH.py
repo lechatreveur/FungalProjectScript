@@ -15,7 +15,9 @@ General script to generate cell_ids.txt from brightfield segmentations.
 import os
 import argparse
 from skimage.io import imread
-from skimage.measure import label, regionprops
+from skimage.measure import regionprops
+
+from Cell_tracking_functions import to_labeled_current
 
 def generate_cell_ids(movie_root, file_name, output_base_dir, z_index=2, min_area=2500):
     masks_folder = os.path.join(movie_root, f"{file_name}/Masks_{file_name}")
@@ -29,7 +31,10 @@ def generate_cell_ids(movie_root, file_name, output_base_dir, z_index=2, min_are
         return False
 
     segmentation = imread(seg_path)
-    labeled = label(segmentation)
+    # Cellpose TIFFs are instance-labeled. Relabeling them can renumber IDs
+    # after a label disappears at an image boundary, causing jobs to target
+    # a different or nonexistent cell.
+    labeled = to_labeled_current(segmentation)
     regions = regionprops(labeled)
     filtered = [r.label for r in regions if r.area >= min_area]
 
@@ -53,4 +58,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     generate_cell_ids(args.movie_root, args.file_name, args.output_base_dir, args.z_index, args.min_area)
-

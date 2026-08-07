@@ -30,7 +30,25 @@ def load_feature_constrained_data(experiments_dict):
     df_list = []
     for exp_name, exp_dir in experiments_dict.items():
         df_exp = load_experiment_features(exp_dir)
-        df_exp['global_cell_id'] = exp_name + "_" + df_exp.index.astype(str)
+        
+        csv_path = os.path.join(exp_dir, "unaligned_pairs_quant", "stacked_gfp1_gfp2_for_unaligned_pairs.csv")
+        if not os.path.exists(csv_path):
+            csv_path = os.path.join(exp_dir, "stacked_gfp1_gfp2_for_unaligned_pairs.csv")
+            
+        if os.path.exists(csv_path):
+            df_stacked = pd.read_csv(csv_path)
+            if 'global_cell_id' in df_stacked.columns:
+                df_map = df_stacked.drop_duplicates('cell_id')
+                mapping = {
+                    r['cell_id']: exp_name + "_" + str(r['global_cell_id']) + "_" + str(r['source'])
+                    for _, r in df_map.iterrows()
+                }
+            else:
+                mapping = {cid: exp_name + "_" + str(cid) for cid in df_stacked['cell_id'].unique()}
+        else:
+            mapping = {cid: exp_name + "_" + str(cid) for cid in df_exp.index}
+            
+        df_exp['global_cell_id'] = df_exp.index.map(mapping)
         df_exp.set_index('global_cell_id', inplace=True)
         df_list.append(df_exp)
         

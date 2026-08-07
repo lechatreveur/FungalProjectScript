@@ -273,6 +273,24 @@ def train(args):
     print(f"[train] Done. Best val loss: {best_val_loss:.4f}")
     print(f"[train] Checkpoints saved to: {out_dir}")
 
+    # Backup to NAS
+    try:
+        nas_base = Path("/Volumes/Movies/AI")
+        if nas_base.exists() and nas_base.is_dir():
+            nas_out_dir = nas_base / out_dir.name
+            nas_out_dir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            for filename in ["model_latest.pt", "model_best.pt", "train_history.json"]:
+                src = out_dir / filename
+                dst = nas_out_dir / filename
+                if src.exists():
+                    shutil.copy2(src, dst)
+            print(f"[train] Backed up checkpoints to NAS: {nas_out_dir}")
+        else:
+            print("[train] NAS backup path /Volumes/Movies/AI not found or not mounted. Skipping backup.")
+    except Exception as e:
+        print(f"[train] Warning: Failed to backup checkpoints to NAS: {e}")
+
 
 # ─────────────────────────────────────────────
 # Evaluation on held-out film
