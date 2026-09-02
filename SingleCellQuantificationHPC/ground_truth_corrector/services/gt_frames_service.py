@@ -50,6 +50,15 @@ def stable_color_key(identity: Union[int, str, "np.integer"]) -> int:
         return int(identity)
     return fnv1a_32(str(identity))
 
+def format_cell_display_label(raw_id: Any) -> str:
+    """Format cell identity to match the UI button convention (e.g. 'Cell 50')."""
+    s = str(raw_id)
+    if "_cell_" in s:
+        return f"Cell {s.split('_cell_')[1]}"
+    if s.isdigit():
+        return f"Cell {s}"
+    return s
+
 def id_to_color(cell_id: int) -> Tuple[int, int, int]:
     """Deterministic hue for a stable cell key. Returns BGR for cv2.
 
@@ -257,9 +266,8 @@ class GTFramesService:
                 if labels_here.size == 0:
                     continue
                 vals, counts = np.unique(labels_here, return_counts=True)
-                best_lbl = int(vals[int(np.argmax(counts))])
                 identity = local2global.get(cid, cid)
-                display = local2global.get(cid) or str(cid)
+                display = format_cell_display_label(local2global.get(cid, cid))
                 out.setdefault(best_lbl, (stable_color_key(identity), display))
             except Exception:
                 continue
@@ -336,8 +344,14 @@ class GTFramesService:
         
         def _put_label(cx: int, cy: int, text: str) -> None:
             font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(img_bgr, text, (cx, cy), font, 1.05, (0, 0, 0), 4, cv2.LINE_AA)
-            cv2.putText(img_bgr, text, (cx, cy), font, 1.05, (255, 255, 255), 2, cv2.LINE_AA)
+            scale = 0.8
+            thickness_outline = 3
+            thickness_text = 2
+            (tw, th), _ = cv2.getTextSize(text, font, scale, thickness_outline)
+            tx = int(cx - tw / 2)
+            ty = int(cy + th / 2)
+            cv2.putText(img_bgr, text, (tx, ty), font, scale, (0, 0, 0), thickness_outline, cv2.LINE_AA)
+            cv2.putText(img_bgr, text, (tx, ty), font, scale, (255, 255, 255), thickness_text, cv2.LINE_AA)
 
         if seg_candidates and seg_candidates[0].exists():
             seg = imread(str(seg_candidates[0]))
@@ -355,7 +369,8 @@ class GTFramesService:
                 for r in regionprops(seg):
                     cy, cx = int(r.centroid[0]), int(r.centroid[1])
                     hit = ident.get(r.label)
-                    _put_label(cx, cy, hit[1] if hit is not None else "?")
+                    if hit is not None:
+                        _put_label(cx, cy, hit[1])
         else:
             # Fallback: scan tracked-cell CSVs directly (already an identity).
             tracked_dir = resolve_under_root(self.config.local_movie_root, exp, film, f"TrackedCells_{film}")
@@ -385,7 +400,8 @@ class GTFramesService:
                         ys, xs = np.where(mask > 0)
                         if len(xs) > 0:
                             cx, cy = int(np.mean(xs)), int(np.mean(ys))
-                            _put_label(cx, cy, local2global.get(cid) or str(cid))
+                            display = format_cell_display_label(local2global.get(cid, cid))
+                            _put_label(cx, cy, display)
                     except Exception:
                         continue
 
