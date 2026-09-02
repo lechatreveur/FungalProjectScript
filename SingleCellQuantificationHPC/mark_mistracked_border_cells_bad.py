@@ -47,39 +47,29 @@ def rle_touches_border(rle_str: str, H: int = 2000, W: int = 2000) -> bool:
     return False
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Mark mistracked cells that touch image border as bad.")
-    parser.add_argument("--movie_root", type=Path, default=MOVIE_ROOT, help="Base movie root directory")
-    parser.add_argument("--exp", type=str, default=DEFAULT_EXP, help="Experiment folder name")
-    parser.add_argument("--sequence", type=str, default=DEFAULT_SEQ, help="Sequence name")
-    parser.add_argument("--dry_run", action="store_true", help="Preview changes without modifying files")
-    args = parser.parse_args()
+def process_sequence_border(
+    exp_dir: Path,
+    seq_name: str,
+    link_data: Dict[str, Any],
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    if seq_name not in link_data:
+        print(f"❌ Sequence '{seq_name}' not found in linkage")
+        return {}
 
-    exp_dir = args.movie_root / args.exp
-    link_file = exp_dir / "sequence_linkage.json"
-    qc_file = exp_dir / f"qc_{args.sequence}.json"
-
-    if not link_file.exists():
-        print(f"❌ sequence_linkage.json not found at {link_file}")
-        return
+    qc_file = exp_dir / f"qc_{seq_name}.json"
     if not qc_file.exists():
         print(f"❌ QC file not found at {qc_file}")
-        return
+        return {}
 
-    with open(link_file, "r", encoding="utf-8") as f:
-        link_data = json.load(f)
-
-    if args.sequence not in link_data:
-        print(f"❌ Sequence '{args.sequence}' not found in linkage")
-        return
-
-    films = link_data[args.sequence]["films"]
-    g_cells = link_data[args.sequence]["global_cells"]
+    films = link_data[seq_name]["films"]
+    g_cells = link_data[seq_name]["global_cells"]
 
     with open(qc_file, "r", encoding="utf-8") as f:
         qc_data: Dict[str, Any] = json.load(f)
 
     mistracked_gids = [gid for gid, data in qc_data.items() if data.get("status") == "mistracked"]
+    print(f"\n================ Sequence: {seq_name} ================")
     print(f"Total cells currently labeled 'mistracked': {len(mistracked_gids)}")
 
     updated_cells = {}
@@ -137,15 +127,15 @@ def main():
     print(f"Mistracked cells touching border: {len(updated_cells)} / {len(mistracked_gids)}")
 
     if updated_cells:
-        sample_keys = list(updated_cells.keys())[:5]
-        print("\nSample updated cells:")
+        sample_keys = list(updated_cells.keys())[:3]
+        print("Sample updated cells:")
         for sk in sample_keys:
             print(f"  {sk}: {updated_cells[sk]}")
 
-    if not args.dry_run and updated_cells:
+    if not dry_run and updated_cells:
         bak_file = qc_file.with_suffix(".json.bak_border")
         shutil.copy2(qc_file, bak_file)
-        print(f"\nCreated backup: {bak_file}")
+        print(f"Created backup: {bak_file}")
 
         for gid, entry in updated_cells.items():
             qc_data[gid] = entry
@@ -155,12 +145,50 @@ def main():
 
         print(f"Successfully updated {len(updated_cells)} cells to 'bad' in {qc_file}")
 
-        # Summary of new status distribution
         status_counts = {}
         for k, v in qc_data.items():
             st = v.get("status")
             status_counts[st] = status_counts.get(st, 0) + 1
-        print(f"New QC status counts in {args.sequence}: {status_counts}")
+        print(f"New QC status counts in {seq_name}: {status_counts}")
+
+    return {
+        "sequence": seq_name,
+        "mistracked_checked": len(mistracked_gids),
+        "updated_to_bad": len(updated_cells),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Mark mistracked cells that touch image border as bad.")
+    parser.add_argument("--movie_root", type=Path, default=MOVIE_ROOT, help="Base movie root directory")
+    parser.add_argument("--exp", type=str, default=DEFAULT_EXP, help="Experiment folder name")
+    parser.add_argument("--sequence", type=str, default=DEFAULT_SEQ, help="Sequence name")
+    parser.add_argument("--all_sequences", action="store_true", help="Process all sequences in sequence_linkage.json")
+    parser.add_argument("--dry_run", action="store_true", help="Preview changes without modifying files")
+    args = parser.parse_args()
+
+    exp_dir = args.movie_root / args.exp
+    link_file = exp_dir / "sequence_linkage.json"
+
+    if not link_file.exists():
+        print(f"❌ sequence_linkage.json not found at {link_file}")
+        return
+
+    with open(link_file, "r", encoding="utf-8") as f:
+        link_data = json.load(f)
+
+    if args.all_sequences:
+        targets = list(link_data.keys())
+    else:
+        targets = [args.sequence]
+
+    for seq in targets:
+        process_sequence_border(
+            exp_dir=exp_dir,
+            seq_name=seq,
+            link_data=link_data,
+            dry_run=args.dry_run,
+        )
 
 
 if __name__ == "__main__":
