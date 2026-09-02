@@ -51,12 +51,20 @@ biological interpretation that a task has not established.
   [SingleCellQuantificationHPC/COWORKER_GUIDE.md](SingleCellQuantificationHPC/COWORKER_GUIDE.md).
 - **Script naming, lifecycle, and the archive rule:**
   [PROJECT_MAP.md](PROJECT_MAP.md).
+- **Per-experiment context (M92 … M160: strain, channels, films, scripts):**
+  [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 - **Hard-won bugs and design traps:**
   [DEVELOPMENT_NOTES.md](DEVELOPMENT_NOTES.md).
 - **Manifold explorer config semantics:**
   [SingleCellDataAnalysis/manifold_explorer/README.md](SingleCellDataAnalysis/manifold_explorer/README.md).
 - **Frame coordinate systems (local / aligned / sequence / global cell):**
   [docs/COORDINATE_SYSTEMS.md](docs/COORDINATE_SYSTEMS.md).
+- **Handing a multi-step change to another agent:**
+  [docs/STAGED_HANDOFF.md](docs/STAGED_HANDOFF.md).
+- **Working on any of the three Flask review apps:**
+  [docs/FLASK_APPS.md](docs/FLASK_APPS.md).
+- **Training or promoting a model:**
+  [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md).
 - **Frozen dependency state:** [requirements.txt](requirements.txt).
 - **Working policy (validation, provenance, paths, irreversible-action gate,
   non-negotiables):** [docs/PROJECT_POLICY.md](docs/PROJECT_POLICY.md).
@@ -114,5 +122,6 @@ are context or evidence, not policy.
 - Do not hard-code absolute external paths in new code. Resolve via
   environment variable → config file → documented default (P4).
 - Do not commit credentials, host addresses, cookies, payload dumps, or a
-  machine-specific `config.yaml`. Scrub before pushing.
+  machine-specific `config.yaml`. Run the pre-push scrub in
+  [docs/SHARING_HYGIENE.md](docs/SHARING_HYGIENE.md) (P11).
 - Commit or push only when asked; branch off `main` first.

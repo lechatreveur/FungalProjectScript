@@ -33,6 +33,11 @@ A critical bug existed where cells without explicit start/end alignments were be
   3. Skips only if neither exists.
 
 ## 4. GUI Rendering & Visualization
+- **Stable per-cell color** (correction tools): a cell's color must key off its
+  stable identity (`global_cell_id`, or `(film, local_cell_id)`), never render
+  order or a table-row index, so the same cell keeps its color across frames and
+  across `tracking_corrector` / `ground_truth_corrector`. See
+  `docs/FLASK_APPS.md` "Shared UI conventions".
 - **Saliency (AI Vision)**: We integrated autograd-based saliency heatmaps. 
 - **Transparency Fix**: When overlaying heatmaps, do not use simple `alpha` on a 2D array, or the "black/low" values will darken the biology. Instead, use a **4-channel RGBA map** where the intensity of the saliency is mapped directly to the **Alpha** channel. 
 - **Axis Bounds**: When adding new `imshow` artists for overlays, always initialize them with the same dimensions as the main sheet (`np.zeros_like(sheet)`) to avoid Matplotlib's auto-scaling squishing the window.

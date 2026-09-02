@@ -1,6 +1,9 @@
 # Project policy
 
 Version 1. Effective 2026-09-02. Version 1.1 (2026-09-02) adds P4–P6.
+Version 1.2 (2026-09-02) adds P7. Version 1.3 (2026-09-02) adds P10.
+Version 1.4 (2026-09-02) adds P9. Version 1.5 (2026-09-02) adds P11.
+Version 1.6 (2026-09-02) adds P8.
 
 The working policy for changes to this repository, whether made by a person or an
 AI agent. [AGENTS.md](../AGENTS.md) is the entry router; this file is the
@@ -13,6 +16,16 @@ rulebook. It currently covers:
 - **P5 — Irreversible-action gate.**
 - **P6 — Frame coordinate systems** (reference doc:
   [COORDINATE_SYSTEMS.md](COORDINATE_SYSTEMS.md)).
+- **P7 — Staged handoff prompts** (reference doc:
+  [STAGED_HANDOFF.md](STAGED_HANDOFF.md)).
+- **P9 — Flask apps shared-core contract** (reference doc:
+  [FLASK_APPS.md](FLASK_APPS.md)).
+- **P10 — Training reproducibility** (reference doc:
+  [TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md)).
+- **P8 — Experiments ledger** (reference doc:
+  [EXPERIMENTS.md](EXPERIMENTS.md)).
+- **P11 — Sharing hygiene** (reference doc:
+  [SHARING_HYGIENE.md](SHARING_HYGIENE.md)).
 
 Cross-model verification (using an external CLI agent as an independent
 reviewer) is planned for version 2 and is not policy yet.
@@ -384,3 +397,139 @@ the API rules, and the historical bugs — is in
   existing linked cell.
 - New code that combines endpoints from different films converts each to a
   sequence frame first (decode with that film's own offset), then combines.
+
+---
+
+## P7 — Staged handoff prompts
+
+When a multi-step change is delegated to another agent, or is large enough that
+a cold start would re-derive most of its context, write it as a sequence of
+individually verifiable stages. The method, the shared-facts preamble rules, and
+a fill-in template are in [STAGED_HANDOFF.md](STAGED_HANDOFF.md); the worked
+examples are the `antigravity_prompts_*.md` files at repository root.
+
+### Rules
+
+- **One stage, one verifiable outcome.** Every stage ends with a concrete
+  `Verify by ...` check named in the prompt itself — the P2 ladder applied per
+  stage.
+- **Stage 1 de-risks the load-bearing assumption** (data plumbing, a correctness
+  fix, a schema) before any UI, cleanup, or optimization is built on it.
+- **The irreversible stage is last and explicitly gated** on the earlier stages
+  being verified. It follows P5: move don't delete, back up, print before/after
+  counts.
+- **The shared-facts preamble is dated and sourced** ("confirmed against the
+  current code, dated YYYY-MM-DD") and uses exact identifiers — paths, function
+  names, line ranges, concrete ids — not descriptions.
+- **The preamble states what to do if a premise turns out false:** stop and
+  report, do not proceed or silently repair.
+- A handoff file is a working artifact. Keep it (it records what was verified and
+  when); it is evidence, not policy (P1 hierarchy).
+
+---
+
+## P8 — Experiments ledger
+
+Each imaging experiment (M92, M93, … M160, plus the pre-pipeline and
+representation-learning datasets) has a row in
+[EXPERIMENTS.md](EXPERIMENTS.md): date, movie folder, strain/condition, channels,
+film-sequence structure, driving scripts, and deliverables. The canonical
+machine-readable registry is
+`SingleCellQuantificationHPC/tracking_corrector/config.yaml`; EXPERIMENTS.md is
+the human-readable companion that also records what the config cannot (strain,
+aim, which analyses were run).
+
+### Rules
+
+- **Adding an experiment folder to `tracking_corrector/config.yaml` means adding
+  its row to `EXPERIMENTS.md`** in the same change.
+- Repo-derived columns (date, channels, films, scripts) are facts; the
+  strain/condition column is inferred from film naming until someone confirms it
+  against the lab notebook; the **Aim** column is filled in by the owner.
+- An experiment-dated script is a frozen record for its row (P1) — do not
+  repurpose it; write a new dated script for a new experiment.
+
+---
+
+## P9 — Flask apps shared-core contract
+
+The three review apps in `SingleCellQuantificationHPC/` read and write the same
+on-disk dataset. `tracking_corrector` owns the shared dataset-access layer
+(`config.py`, `repositories/`, the dataset-writing services, `qc_schema.py`).
+The full contract — the owner, the on-disk write rules, the reference
+integration pattern, and the `ground_truth_corrector` cleanup task — is in
+[FLASK_APPS.md](FLASK_APPS.md).
+
+### Rules
+
+- **A new or refactored app reuses `tracking_corrector`'s layer** via the
+  `septum_alignment_board` pattern (`sys.path` insert + `from tracking_corrector
+  ... import`). It does not fork a repository or a dataset-writing service.
+- **Every writer of a shared dataset file writes atomically** (temp file +
+  `os.replace`) and **checks the revision it read** before overwriting.
+- **One canonical writer per file class.** `sequence_linkage.json` and
+  `cell_<id>_masks.csv` are written through `tracking_corrector`'s repositories.
+- **Read-only reuse is unrestricted;** forking a writer is not.
+- **Shared UI conventions are honored, not reimplemented per app.** A cell's
+  display color is a deterministic function of its stable identity
+  (`global_cell_id`, or `(film, local_cell_id)`), never of render order or a
+  table-row index — so the same cell keeps its color across frames and across
+  apps. Details in [FLASK_APPS.md](FLASK_APPS.md).
+- Changing a shared repository or service: check every consumer and keep
+  `tracking_corrector/tests/test_atomic_writes.py` and the septum tests green.
+- `ground_truth_corrector` currently forks and has drifted — reconciling it is a
+  P7 staged-handoff task, not a silent refactor.
+
+---
+
+## P10 — Training reproducibility
+
+Every trained model kept in the project carries enough record to say what data,
+code, and settings produced it, and is benchmarked before it becomes the one an
+inference path loads. The full pre-flight / provenance / promotion checklist is
+in [TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md).
+
+### Rules
+
+- **Every kept checkpoint has a `<checkpoint>.provenance.json` sidecar** (P3
+  specialized): git commit, training-data identity (working dirs + manifest row
+  counts + manifest hashes), generating script and verbatim command line, seed
+  and `PYTHONHASHSEED`, hyperparameters, `pos_weight` actually used,
+  augmentation summary, date, host, epoch saved / best epoch, val metrics.
+- **Pin `PYTHONHASHSEED`** for every run of a given model and record it — the
+  train/val split depends on it (see the checklist §5).
+- **The per-run training log is kept with the checkpoint,** not left only in the
+  shared append-mode `training.log`.
+- **Promoting a checkpoint to production is Level 4–5** (P2): benchmark against
+  curated ground truth, compare against the current production checkpoint on the
+  same benchmark, and get owner sign-off for any change to augmentation, label
+  semantics, decision threshold, or input normalization.
+- **Checkpoint relocation between SSD / NAS / repo follows P5:** back up, keep
+  the previous one until the new one is benchmarked, record the move.
+- Superseded checkpoints stay with their provenance and their benchmark numbers.
+
+---
+
+## P11 — Sharing hygiene
+
+The repo is shared with coworkers and pushed to GitHub, and the genomics
+workflow authenticates to an external service. The rules for what leaves the
+machine, the pre-push scrub, and the remediation list for what is already
+committed (a JGI session cookie, a password-on-command-line) are in
+[SHARING_HYGIENE.md](SHARING_HYGIENE.md).
+
+### Rules
+
+- **Never commit** session cookies, tokens, API keys, or passwords — not in a
+  file, a script literal, or a command line. Read secrets from the environment
+  or an interactive prompt.
+- **A committed secret is compromised:** remove the file *and* rotate/revoke it
+  at the provider. Deleting the file is not sufficient.
+- **No machine-specific `config.yaml`** and **no personal email as a code
+  literal** — use `config.example.yaml` and env vars (P4).
+- **Run the pre-push scrub** (SHARING_HYGIENE.md) before sharing any branch that
+  touches the genomics workflow, shell scripts, or config.
+- Lab-internal names (HPC private IP, NAS host, `hsushen`) are low risk but
+  should be centralized in one gitignored place rather than scattered.
+- Purging a committed secret from git history rewrites shared branches — that is
+  the owner's decision, not an automatic step.
