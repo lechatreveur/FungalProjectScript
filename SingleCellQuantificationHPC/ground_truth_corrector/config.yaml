@@ -1,0 +1,60 @@
+server:
+  host: "0.0.0.0"
+  port: 5002
+  cache_max_gb: 2.0
+  cache_max_files: 20000
+
+movie_roots:
+  local: "/Volumes/X10 Pro/Movies"
+  nas: "/Volumes/Movies"
+  cellpose_training: "/Volumes/X10 Pro/Movies/cellpose_training_data"
+
+experiments:
+  - id: "2026_08_28_M160"
+    display_name: "M160"
+    channels: ["bf", "gfp"]
+    training_subfolder: "NeonGreenGFP"
+  - id: "2026_07_16_M156"
+    display_name: "M156"
+    channels: ["bf", "gfp"]
+    training_subfolder: "train"
+  - id: "2026_06_03_M143"
+    display_name: "M143"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2026_04_30_M135"
+    display_name: "M135"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2026_04_29_M133"
+    display_name: "M133"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2026_04_23_M130"
+    display_name: "M130"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2026_01_18_M97"
+    display_name: "M97"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2026_01_16_M96"
+    display_name: "M96"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2026_01_08_M93"
+    display_name: "M93"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2025_12_31_M92"
+    display_name: "M92"
+    channels: ["bf"]
+    training_subfolder: "train"
+  - id: "2025_09_17"
+    display_name: "2025_09_17"
+    channels: ["bf", "gfp"]
+    training_subfolder: "train"
+  - id: "2025_06_25"
+    display_name: "2025_06_25"
+    channels: ["bf"]
+    training_subfolder: "train"

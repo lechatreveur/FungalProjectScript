@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ground-Truth Cell Tracking Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-left">
+            <div class="app-title">
+                <span class="title-icon">🎯</span>
+                <div class="title-text">
+                    <h1>Ground-Truth Tracking Tool</h1>
+                    <span class="subtitle">3-Keyframe Curator & Cellpose Training Exporter</span>
+                </div>
+            </div>
+            <div class="select-group">
+                <label for="expSelect">Experiment:</label>
+                <select id="expSelect"></select>
+            </div>
+            <div class="select-group">
+                <label for="sequenceSelect">Sequence/Film:</label>
+                <select id="sequenceSelect"></select>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="keyframe-badge" id="keyframeBadge">Keyframe: -</div>
+            <button id="btnExportAllTraining" class="btn btn-primary" title="Export all corrected 3-keyframes as Cellpose training pairs">
+                📦 Export Training Set
+            </button>
+        </div>
+    </header>
+
+    <main class="app-main">
+        <div class="center-panel">
+            <div class="canvas-viewport" id="canvasViewport">
+                <canvas id="imageCanvas"></canvas>
+                <div class="canvas-overlay-info" id="canvasOverlayInfo"></div>
+            </div>
+
+            <div class="controls-card">
+                <!-- Playback & Time Controls -->
+                <div class="control-row">
+                    <div class="btn-group">
+                        <button id="firstFrameBtn" title="First Keyframe (Home)">⏮</button>
+                        <button id="prevFrameBtn" title="Previous Keyframe (Left Arrow / A)">◀</button>
+                        <button id="playBtn" title="Play/Pause (Space)">▶</button>
+                        <button id="nextFrameBtn" title="Next Keyframe (Right Arrow / D)">▶</button>
+                        <button id="lastFrameBtn" title="Last Keyframe (End)">⏭</button>
+                    </div>
+
+                    <div class="slider-wrapper">
+                        <span id="currentTimeLabel" class="mono-label">t=0</span>
+                        <div class="slider-container" id="sliderContainer">
+                            <div class="timeline-ticks" id="timelineTicks"></div>
+                            <input type="range" id="timeSlider" min="0" max="0" value="0">
+                        </div>
+                        <span id="maxTimeLabel" class="mono-label">t=0</span>
+                    </div>
+
+                    <div class="btn-group">
+                        <span class="group-label">Channel:</span>
+                        <button id="chanBfBtn" class="btn-toggle active">BF</button>
+                        <button id="chanGfpBtn" class="btn-toggle">GFP</button>
+                    </div>
+
+                    <div class="btn-group">
+                        <span class="group-label">View:</span>
+                        <button id="viewModeBtn" class="btn-mode active">Population</button>
+                    </div>
+                </div>
+
+                <!-- Editing Tool Controls -->
+                <div class="control-row secondary-controls">
+                    <div class="btn-group">
+                        <button id="toolSelectBtn" class="btn-tool active">Select Segment (S)</button>
+                        <button id="toolBrushBtn" class="btn-tool" disabled style="opacity: 0.5;">Brush Draw (B)</button>
+                        <button id="toolEraserBtn" class="btn-tool" disabled style="opacity: 0.5;">Eraser (E)</button>
+                    </div>
+
+                    <div class="btn-group" id="brushControls" style="display: none;">
+                        <span class="group-label">Brush Size:</span>
+                        <input type="range" id="brushSizeSlider" min="1" max="50" value="10" style="width: 90px;">
+                        <span id="brushSizeLabel" class="mono-label">10px</span>
+                    </div>
+
+                    <div class="btn-group" id="opacityControls">
+                        <span class="group-label">Mask Opacity:</span>
+                        <input type="range" id="maskOpacitySlider" min="10" max="90" value="40" style="width: 80px;">
+                        <span id="maskOpacityLabel" class="mono-label">40%</span>
+                    </div>
+
+                    <div class="btn-group">
+                        <button id="undoBtn" class="btn-action">Undo (Ctrl+Z)</button>
+                        <button id="usePrevSegmentBtn" class="btn-action" title="Copy segment from previous keyframe (P)">Use Prev Keyframe (P)</button>
+                        <button id="clearBtn" class="btn-danger-outline">Clear Frame Mask</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="panel-section" id="linkageSection">
+                <div class="panel-section-title">
+                    Tracking Linkages
+                    <span id="currentGlobalCellLabel"></span>
+                </div>
+                <div id="linkageList" class="linkage-list"></div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-section-title">
+                    Cell Selection
+                    <span id="cellCountBadge" class="badge">0 cells</span>
+                </div>
+                <div class="filter-row">
+                    <span class="filter-label">Filter:</span>
+                    <select id="cellFilterSelect" class="custom-select">
+                        <option value="all">All Cells</option>
+                        <option value="good">Good Only</option>
+                        <option value="bad">Bad Only</option>
+                        <option value="corrected">Corrected Only</option>
+                        <option value="mistracked">Mistracked Only</option>
+                    </select>
+                </div>
+                <div class="cell-grid" id="cellGrid"></div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-section-title">Active Cell & QC</div>
+                <div class="info-row">
+                    <span class="info-label">Active Cell:</span>
+                    <span class="info-value" id="cellIdLabel">None</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Current Film:</span>
+                    <span class="info-value" id="localFilmLabel">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Keyframe Timepoint:</span>
+                    <span class="info-value" id="keyframeTimeLabel">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Mask Status:</span>
+                    <span id="maskStatusText" class="status-badge badge-pending">Pending</span>
+                </div>
+
+                <div class="qc-btn-group">
+                    <button id="btnMarkGood" class="btn-qc btn-qc-good">Good</button>
+                    <button id="btnMarkBad" class="btn-qc btn-qc-bad">Bad</button>
+                    <button id="btnMarkCorrected" class="btn-qc btn-qc-corrected">Corrected</button>
+                    <button id="btnMarkMistracked" class="btn-qc btn-qc-mistracked">Mistracked</button>
+                </div>
+            </div>
+
+            <div class="panel-section auto-save-section">
+                <div class="save-status-row">
+                    <span class="status-tip">Autosaves & syncs on change</span>
+                    <span id="autosaveStatus" class="autosave-tag">Idle</span>
+                </div>
+                <button id="btnSaveCell" class="btn btn-save">
+                    💾 Save & Sync Training Data
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal for Linkage Editing -->
+    <div id="modalOverlay">
+        <div id="modalContent">
+            <div class="modal-header">
+                <h2>Replace Linkage for <span id="modalFilmName"></span></h2>
+                <button onclick="closeModal()" class="modal-close-btn">×</button>
+            </div>
+            <p class="modal-desc">Select the matching cell from the keyframe crops below:</p>
+            <div id="modalGallery" class="modal-gallery"></div>
+        </div>
+    </div>
+
+    <!-- JS Scripts -->
+    <script src="{{ url_for('static', filename='js/state.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/color.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/canvas.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/cells.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
