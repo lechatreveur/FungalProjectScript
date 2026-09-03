@@ -250,14 +250,12 @@ function setupEventListeners() {
         };
     }
 
-let isSpaceKeyDown = false;
-
     // Keyboard navigation
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Space' || e.key === ' ') {
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT' && e.target.tagName !== 'TEXTAREA') {
                 e.preventDefault();
-                isSpaceKeyDown = true;
+                state.isSpaceKeyDown = true;
                 const vp = document.getElementById('canvasViewport');
                 if (vp) vp.style.cursor = 'crosshair';
             }
@@ -285,7 +283,7 @@ let isSpaceKeyDown = false;
 
     window.addEventListener('keyup', (e) => {
         if (e.code === 'Space' || e.key === ' ') {
-            isSpaceKeyDown = false;
+            state.isSpaceKeyDown = false;
             const vp = document.getElementById('canvasViewport');
             if (vp) vp.style.cursor = '';
         }
@@ -300,6 +298,17 @@ function pushHistory() {
 function setupCanvasInteractions() {
     const viewport = document.getElementById('canvasViewport');
     if (!viewport) return;
+
+    // Double click on canvas to select cell
+    viewport.addEventListener('dblclick', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const coords = getCanvasMouseCoords(e);
+        const scaleFactor = state.viewMode === 'population' ? ((state.imgWidth || 2000) / (canvas.width || 1000)) : 1.0;
+        const imgX = coords.x * scaleFactor;
+        const imgY = coords.y * scaleFactor;
+        await activateCellAtCoords(imgX, imgY);
+    });
 
     viewport.addEventListener('wheel', (e) => {
         e.preventDefault();
@@ -322,7 +331,7 @@ function setupCanvasInteractions() {
 
     viewport.addEventListener('mousedown', async (e) => {
         const coords = getCanvasMouseCoords(e);
-        if (isSpaceKeyDown || e.code === 'Space' || e.key === ' ') {
+        if (state.isSpaceKeyDown || e.code === 'Space' || e.key === ' ') {
             e.preventDefault();
             e.stopPropagation();
             const scaleFactor = state.viewMode === 'population' ? ((state.imgWidth || 2000) / (canvas.width || 1000)) : 1.0;
@@ -342,11 +351,21 @@ function setupCanvasInteractions() {
         if (e.button === 0) {
             const coords = getCanvasMouseCoords(e);
             
-            // Segment click in select tool mode
+            // In Population view, single click selects the cell
+            if (state.viewMode === 'population') {
+                const scaleFactor = ((state.imgWidth || 2000) / (canvas.width || 1000));
+                const imgX = coords.x * scaleFactor;
+                const imgY = coords.y * scaleFactor;
+                await activateCellAtCoords(imgX, imgY);
+                return;
+            }
+
+            // Segment click in select tool mode (Single Cell view)
             if (state.tool === 'select') {
                 const modeParam = state.selectedSequence ? `sequence=${state.selectedSequence}` : `film=${state.selectedFilm || ''}`;
                 try {
                     const res = await fetch(`/api/segment_at_coords?experiment=${state.selectedExp}&${modeParam}&t=${state.currentFrame}&x=${coords.x}&y=${coords.y}`);
+
 
                     const segData = await res.json();
                     if (segData.rle && segData.label > 0) {

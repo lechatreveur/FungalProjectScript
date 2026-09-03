@@ -36,10 +36,10 @@ const state = {
     isLocalEdit: false,
     linkageDetails: {},
     cacheVer: 1,
-    maskOpacity: 0.40
+    maskOpacity: 0.40,
+    isSpaceKeyDown: false
 };
 
-let isSpaceKeyDown = false;
 let activeModalFilmIdx = -1;
 let activeModalFilmName = "";
 
@@ -55,3 +55,4 @@ Object.defineProperty(window, 'ctx', {
     },
     configurable: true
 });
+
