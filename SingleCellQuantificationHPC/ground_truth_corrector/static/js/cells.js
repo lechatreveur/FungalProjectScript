@@ -69,7 +69,7 @@ async function loadCells(exp, target) {
     }
 }
 
-async function selectCell(cellId) {
+async function selectCell(cellId, options = {}) {
     if (state.selectedCell !== null) {
         const prevActive = document.getElementById(`cell-item-${state.selectedCell}`);
         if (prevActive) prevActive.classList.remove('active');
@@ -78,7 +78,10 @@ async function selectCell(cellId) {
     state.selectedCell = cellId;
     
     const currActive = document.getElementById(`cell-item-${cellId}`);
-    if (currActive) currActive.classList.add('active');
+    if (currActive) {
+        currActive.classList.add('active');
+        currActive.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
     
     const cellLbl = document.getElementById('cellIdLabel');
     if (cellLbl) cellLbl.innerText = cellId;
@@ -109,10 +112,13 @@ async function selectCell(cellId) {
     const maxTimeLbl = document.getElementById('maxTimeLabel');
     if (maxTimeLbl) maxTimeLbl.innerText = `kf=${Math.max(0, state.numFrames - 1)}`;
     
-    resetView();
+    if (!options.preserveView && !state.userHasPanned) {
+        resetView();
+    }
     await displayFrame();
     updateQCUI();
 }
+
 
 function renderLinkageBoard() {
     const list = document.getElementById('linkageList');
@@ -420,9 +426,9 @@ async function activateCellAtCoords(x, y) {
                 if (eraserBtn) { eraserBtn.disabled = false; eraserBtn.style.opacity = '1.0'; }
             }
 
-            await selectCell(data.cell_id);
+            await selectCell(data.cell_id, { preserveView: true });
             if (statusText) {
-                statusText.innerText = `Activated ${data.cell_id}`;
+                statusText.innerText = `Selected ${data.cell_id}`;
                 statusText.style.color = 'var(--accent-green)';
             }
         } else {
@@ -435,3 +441,4 @@ async function activateCellAtCoords(x, y) {
         console.error("Error activating cell:", err);
     }
 }
+

@@ -314,6 +314,18 @@ def segment_at_coords():
     return jsonify({"rle": "", "label": 0})
 
 
+def _point_in_rle(rle_str: str, x: int, y: int, H: int = 2000, W: int = 2000) -> bool:
+    """Check if (x, y) pixel is within 1-based Fortran column-major RLE intervals."""
+    if not rle_str or str(rle_str) == "nan" or not isinstance(rle_str, str):
+        return False
+    idx_1 = x * H + y + 1
+    parts = list(map(int, rle_str.strip().split()))
+    for s, l in zip(parts[0::2], parts[1::2]):
+        if s <= idx_1 < s + l:
+            return True
+    return False
+
+
 @masks_bp.route("/api/identify_cell", methods=["POST", "GET"])
 def identify_cell():
     if request.method == "POST":
@@ -348,56 +360,69 @@ def identify_cell():
     base_root = frames_svc.config.local_movie_root
     local_cid = None
 
-    # 1. Check _seg.tif directly (fastest path)
-    masks_dir = base_root / exp / target_film / f"Masks_{target_film}"
-    if masks_dir.exists():
-        files = sorted([f for f in masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
-        if not files:
-            files = sorted([f for f in masks_dir.glob(f"*_t{local_t:03d}_*_seg.tif") if not f.name.startswith(".")])
-        if files:
+    # 1. Fast path: check TrackedCells CSVs directly via analytic RLE intervals (<1ms)
+    tracked_dir = base_root / exp / target_film / f"TrackedCells_{target_film}"
+    if tracked_dir.exists():
+        rle_col = "rle_gfp" if "FL" in target_film else "rle_bf"
+        for csv_file in sorted(tracked_dir.glob("cell_*_masks.csv")):
+            if csv_file.name.startswith("."):
+                continue
+            m = re.match(r"^cell_(\d+)_masks\.csv$", csv_file.name)
+            if not m:
+                continue
+            cid = int(m.group(1))
+
             try:
-                seg = imread(str(files[0]))
-                if seg.ndim > 2: seg = seg[..., 0]
-                H, W = seg.shape[:2]
-                if 0 <= y_val < H and 0 <= x_val < W:
-                    hit_lbl = int(seg[y_val, x_val])
-                    if hit_lbl > 0:
-                        local_cid = hit_lbl
-            except Exception:
-                pass
-
-    # 2. Check TrackedCells CSVs fallback
-    if local_cid is None:
-        tracked_dir = base_root / exp / target_film / f"TrackedCells_{target_film}"
-        if tracked_dir.exists():
-            for csv_file in tracked_dir.glob("cell_*_masks.csv"):
-                if csv_file.name.startswith("."): continue
-                m = re.match(r"^cell_(\d+)_masks\.csv$", csv_file.name)
-                if not m: continue
-                cid = int(m.group(1))
-
-                try:
-                    df = pd.read_csv(csv_file)
-                    rows = df[df["time_point"] == local_t]
-                    if rows.empty: continue
-                    rle = str(rows.iloc[0].get("rle_bf", ""))
-                    if not rle or rle.strip() == "" or rle.lower() == "nan":
-                        rle = str(rows.iloc[0].get("rle_gfp", ""))
-                    if not rle or rle.strip() == "" or rle.lower() == "nan": continue
-
-                    H, W = int(rows.iloc[0].get("height", 2000)), int(rows.iloc[0].get("width", 2000))
-                    if 0 <= y_val < H and 0 <= x_val < W:
-                        mask = validate_and_decode_rle(rle, H, W)
-                        if mask[y_val, x_val] > 0:
-                            local_cid = cid
-                            break
-                except Exception:
+                df = pd.read_csv(csv_file)
+                rows = df[df["time_point"] == local_t]
+                if rows.empty:
                     continue
+                val = str(rows.iloc[0].get(rle_col, "")).strip()
+                if not val or val == "nan":
+                    alt_col = "rle_bf" if rle_col == "rle_gfp" else "rle_gfp"
+                    val = str(rows.iloc[0].get(alt_col, "")).strip()
+                if not val or val == "nan":
+                    continue
+
+                H = int(rows.iloc[0].get("height", 2000))
+                W = int(rows.iloc[0].get("width", 2000))
+                if 0 <= x_val < W and 0 <= y_val < H:
+                    if _point_in_rle(val, x_val, y_val, H, W):
+                        local_cid = cid
+                        break
+            except Exception:
+                continue
+
+    # 2. Fallback: check _seg.tif directly and resolve via seg_label_identity
+    if local_cid is None:
+        masks_dir = base_root / exp / target_film / f"Masks_{target_film}"
+        if masks_dir.exists():
+            files = sorted([f for f in masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
+            if not files:
+                files = sorted([f for f in masks_dir.glob(f"*_t{local_t:03d}_*_seg.tif") if not f.name.startswith(".")])
+            if files:
+                try:
+                    seg = imread(str(files[0]))
+                    if seg.ndim > 2:
+                        seg = seg[..., 0]
+                    H, W = seg.shape[:2]
+                    if 0 <= y_val < H and 0 <= x_val < W:
+                        hit_lbl = int(seg[y_val, x_val])
+                        if hit_lbl > 0:
+                            local2global = frames_svc.local_to_global_map(exp, target_film, sequence)
+                            ident = frames_svc.seg_label_identity(exp, target_film, local_t, seg, H, W, local2global, sequence=sequence)
+                            if hit_lbl in ident:
+                                # Found mapped cell identity
+                                local_cid = hit_lbl
+                            else:
+                                local_cid = hit_lbl
+                except Exception:
+                    pass
 
     if local_cid is None:
         return jsonify({"status": "not_found", "message": "No cell found at coordinates"}), 404
 
-    # 3. Map to global cell if in a sequence
+    # 3. Map local_cid to global cell ID if in a sequence
     global_cid = str(local_cid)
     if sequence:
         seq_res = linkage_svc.get_sequences(exp)
@@ -417,4 +442,5 @@ def identify_cell():
         "local_cell_id": local_cid,
         "film": target_film
     })
+
 

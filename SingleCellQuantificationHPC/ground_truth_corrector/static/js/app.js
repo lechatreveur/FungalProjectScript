@@ -250,12 +250,16 @@ function setupEventListeners() {
         };
     }
 
+let isSpaceKeyDown = false;
+
     // Keyboard navigation
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Space' || e.key === ' ') {
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT' && e.target.tagName !== 'TEXTAREA') {
                 e.preventDefault();
                 isSpaceKeyDown = true;
+                const vp = document.getElementById('canvasViewport');
+                if (vp) vp.style.cursor = 'crosshair';
             }
         }
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
@@ -282,6 +286,8 @@ function setupEventListeners() {
     window.addEventListener('keyup', (e) => {
         if (e.code === 'Space' || e.key === ' ') {
             isSpaceKeyDown = false;
+            const vp = document.getElementById('canvasViewport');
+            if (vp) vp.style.cursor = '';
         }
     });
 }
@@ -319,7 +325,10 @@ function setupCanvasInteractions() {
         if (isSpaceKeyDown || e.code === 'Space' || e.key === ' ') {
             e.preventDefault();
             e.stopPropagation();
-            await activateCellAtCoords(coords.x, coords.y);
+            const scaleFactor = state.viewMode === 'population' ? ((state.imgWidth || 2000) / (canvas.width || 1000)) : 1.0;
+            const imgX = coords.x * scaleFactor;
+            const imgY = coords.y * scaleFactor;
+            await activateCellAtCoords(imgX, imgY);
             return;
         }
 
@@ -338,6 +347,7 @@ function setupCanvasInteractions() {
                 const modeParam = state.selectedSequence ? `sequence=${state.selectedSequence}` : `film=${state.selectedFilm || ''}`;
                 try {
                     const res = await fetch(`/api/segment_at_coords?experiment=${state.selectedExp}&${modeParam}&t=${state.currentFrame}&x=${coords.x}&y=${coords.y}`);
+
                     const segData = await res.json();
                     if (segData.rle && segData.label > 0) {
                         pushHistory();
