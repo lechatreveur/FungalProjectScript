@@ -1,5 +1,6 @@
 import io
 import re
+import logging
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -7,6 +8,30 @@ from flask import Blueprint, jsonify, request, Response, current_app
 from skimage.measure import label
 from skimage.io import imread
 from PIL import Image
+
+logger = logging.getLogger(__name__)
+
+def _parse_cell_id_num(cell_id_str: str) -> int:
+    if not cell_id_str:
+        return -1
+    s = str(cell_id_str).strip()
+    if "_cell_" in s:
+        s = s.split("_cell_")[-1]
+    elif "_" in s:
+        s = s.split("_")[-1]
+    try:
+        return int(s)
+    except ValueError:
+        return -1
+
+def _create_placeholder_pil(size: int = 100) -> Image.Image:
+    """Create a high-contrast placeholder (bright red/magenta pattern) for missing/failed frame decodes."""
+    arr = np.zeros((size, size, 3), dtype=np.uint8)
+    arr[:, :, 0] = 220  # Red
+    arr[:, :, 2] = 200  # Magenta
+    arr[size//2 - 1:size//2 + 1, :, :] = 255
+    arr[:, size//2 - 1:size//2 + 1, :] = 255
+    return Image.fromarray(arr)
 
 frames_bp = Blueprint("frames", __name__)
 
@@ -24,7 +49,7 @@ def get_film_frame_count_and_size(base_root: Path, exp: str, film: str):
                     continue
     frames_dir = base_root / exp / film / f"Frames_{film}"
     if frames_dir.exists():
-        files = [f for f in frames_dir.glob("*.tif") if not f.name.startswith(".")]
+        files = [f for f in frames_dir.glob("*.tif") if not f.name.startswith(".") and "_seg" not in f.stem]
         if files:
             try:
                 img = imread(str(files[0]))
@@ -286,48 +311,75 @@ def get_cell_strip_image():
         seq_res = linkage_svc.get_sequences(exp)
         sequences = seq_res.get("sequences", {})
         
+        matched_seq = None
         if seq in sequences:
-            seq_info = sequences[seq]
-            films = seq_info.get("films", [seq])
+            matched_seq = seq
+        else:
+            for k in sequences:
+                if k == seq or k.endswith(f"_{seq}") or k.endswith(f"_{seq.lstrip('3_')}"):
+                    matched_seq = k
+                    break
+
+        if matched_seq:
+            seq_info = sequences[matched_seq]
+            films = seq_info.get("films", [matched_seq])
             global_cells = seq_info.get("global_cells", {})
-            local_ids = global_cells.get(str(cell_id), [-1] * len(films))
+            
+            # Lookup cell_id directly or by numerical suffix
+            cell_key = str(cell_id)
+            if cell_key not in global_cells:
+                num = _parse_cell_id_num(cell_key)
+                for gk in global_cells:
+                    if _parse_cell_id_num(gk) == num:
+                        cell_key = gk
+                        break
+
+            local_ids = global_cells.get(cell_key, [_parse_cell_id_num(cell_id)] * len(films))
             
             for i, film in enumerate(films):
                 local_id = local_ids[i] if i < len(local_ids) else -1
                 L, _, _ = get_film_frame_count_and_size(base_root, exp, film)
                 for local_t in range(L):
                     frames_info.append((film, local_id, local_t))
+        else:
+            film = seq
+            cid = _parse_cell_id_num(cell_id)
+            L, _, _ = get_film_frame_count_and_size(base_root, exp, film)
+            for local_t in range(L):
+                frames_info.append((film, cid, local_t))
     else:
         film = request.args.get("film")
-        try:
-            cid = int(cell_id) if cell_id else -1
-        except ValueError:
-            cid = -1
-        L, _, _ = get_film_frame_count_and_size(base_root, exp, film)
-        for local_t in range(L):
-            frames_info.append((film, cid, local_t))
+        cid = _parse_cell_id_num(cell_id)
+        if film:
+            L, _, _ = get_film_frame_count_and_size(base_root, exp, film)
+            for local_t in range(L):
+                frames_info.append((film, cid, local_t))
             
     num_frames = len(frames_info)
     if num_frames == 0:
-        img = Image.new('RGB', (100, 100), (0, 0, 0))
+        logger.warning(f"⚠️ No frames found for exp='{exp}', sequence='{request.args.get('sequence')}', film='{request.args.get('film')}'")
+        img = _create_placeholder_pil(100)
         buf = io.BytesIO()
         img.save(buf, format="JPEG")
         return Response(buf.getvalue(), mimetype="image/jpeg")
         
-    import io
     strip_img = Image.new('RGB', (num_frames * 100, 100), (0, 0, 0))
     for t, (film, local_cid, local_t) in enumerate(frames_info):
         try:
             if local_cid == -1:
-                crop_bytes = None
+                logger.warning(f"⚠️ Unresolved cell_id '{cell_id}' for film '{film}' at frame {local_t}")
+                crop_img = _create_placeholder_pil(100)
             else:
                 crop_bytes = frames_service.render_frame_crop_jpeg(exp, film, local_cid, local_t, channel)
-            
-            if crop_bytes:
-                crop_img = Image.open(io.BytesIO(crop_bytes))
-                strip_img.paste(crop_img, (t * 100, 0))
-        except Exception:
-            pass
+                if crop_bytes:
+                    crop_img = Image.open(io.BytesIO(crop_bytes))
+                else:
+                    logger.error(f"❌ Empty crop bytes returned for {exp}/{film}/cell_{local_cid}/t_{local_t}")
+                    crop_img = _create_placeholder_pil(100)
+            strip_img.paste(crop_img, (t * 100, 0))
+        except Exception as e:
+            logger.error(f"❌ Decode/compositing error at frame {t} (film={film}, cid={local_cid}, t={local_t}): {e}", exc_info=True)
+            strip_img.paste(_create_placeholder_pil(100), (t * 100, 0))
             
     width = num_frames * 100
     buf = io.BytesIO()

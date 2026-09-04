@@ -79,7 +79,10 @@ def main():
     # Gather tasks
     args_list = []
     for gid, status in qc.items():
-        if status in ['good', 'corrected'] and gid in f1_cells:
+        from tracking_corrector.qc_schema import USABLE_GLOBAL_STATUSES
+        st_val = status.get("status") if isinstance(status, dict) else str(status)
+        if st_val.lower() in USABLE_GLOBAL_STATUSES and gid in f1_cells:
+
             local_ids = f1_cells[gid]
             for idx, lid in enumerate(local_ids):
                 if lid != -1:

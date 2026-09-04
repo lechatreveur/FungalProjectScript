@@ -30,6 +30,7 @@ from quant_helpers import (
     transform_to_mn_space,
     pattern_score_split_rectangles,
     save_split_rectangles_pattern_overlay,
+    build_strip_tile,
 )
 from Cell_tracking_functions import touches_border
 
@@ -349,6 +350,13 @@ def bf_pattern_only(
     sigma_n_px: float = 1.0,   # positional prior σ along n (pixels)
     sigma_m_px: float = 6.0,   # <-- NEW: positional prior σ along m (pixels)
     do_plot: bool = False,
+    strip_tiles: list | None = None,  # optional accumulator; one build_strip_tile()
+                                       # output appended per call, independent of
+                                       # do_plot and of whether pattern scoring succeeds
+    bf_min: float | None = None,      # movie-wide BF dynamic range (from
+    bf_max: float | None = None,      # FindMovieMaxMin), for cross-frame-consistent
+                                       # strip-tile normalization; falls back to a
+                                       # per-frame min/max stretch if not given
 ) -> dict | None:
 
 
@@ -383,7 +391,21 @@ def bf_pattern_only(
     cropped_cell_mask[:, 0] = False
     cropped_cell_mask[:, -1] = False
 
-    
+    # Strip tile: built from the raw crop + mask alone, so it is available even
+    # if the pattern-scoring EM below fails or returns early. Normalize against
+    # the movie-wide BF dynamic range when given (matches how GFP strip tiles
+    # get a consistent, per-movie normalization via gfp_min/gfp_max), otherwise
+    # fall back to a per-frame min/max stretch.
+    if strip_tiles is not None:
+        if bf_min is not None and bf_max is not None and bf_max > bf_min:
+            norm_crop = np.clip(((raw_crop.astype(np.float32) - bf_min) /
+                                  (bf_max - bf_min) * 255.0), 0, 255)
+        else:
+            _a = raw_crop.astype(np.float32)
+            _rng = float(np.nanmax(_a) - np.nanmin(_a))
+            norm_crop = (np.zeros_like(_a) if _rng <= 0
+                         else np.clip((_a - np.nanmin(_a)) / _rng * 255.0, 0, 255))
+        strip_tiles.append(build_strip_tile(norm_crop, cropped_cell_mask))
 
     # --- Build a surrogate single-region mask by connecting components with a thin line
     

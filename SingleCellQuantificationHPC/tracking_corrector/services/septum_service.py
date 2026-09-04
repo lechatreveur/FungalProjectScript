@@ -242,11 +242,75 @@ def _get_cell_crop_tile(
         return None
 
 
+def _rotation_angle_from_mask(mask: np.ndarray) -> float:
+    """Return rotation angle (degrees, CCW) to align the cell's major axis vertically.
+
+    ``skimage.measure.regionprops.orientation`` is the angle between the 0th
+    axis (rows) and the major axis of the equivalent ellipse, measured CCW in
+    radians, range [-π/2, π/2].
+
+    Derivation
+    ----------
+    The major axis direction in (row, col) image coordinates for orientation θ
+    is (cos θ, sin θ).  Rotating the *image* by angle α maps that vector to::
+
+        (cos θ · cos α - sin θ · sin α,  cos θ · sin α + sin θ · cos α)
+
+    Setting α = -θ yields (1, 0), i.e. the major axis points along rows
+    (vertically).  Therefore ``rotation_deg = -degrees(θ)``.
+
+    Spot-checks
+    -----------
+    * θ = 0   (already vertical)   → 0°  rotation (no-op)
+    * θ = π/2 (horizontal cell)    → -90° CW rotation  → vertical ✓
+    * θ = -π/2 (horizontal, other) → +90° CCW rotation → vertical ✓
+    * θ = π/4 (45° diagonal)       → -45° rotation      → vertical ✓
+    """
+    try:
+        from skimage.measure import regionprops, label as sk_label
+        lab = sk_label((mask > 0).astype(np.uint8))
+        props = regionprops(lab)
+        if not props:
+            return 0.0
+        return float(-np.degrees(props[0].orientation))
+    except Exception:
+        return 0.0
+
+
+def _rotate_point_in_crop(
+    py: float,
+    px: float,
+    crop_h: int,
+    crop_w: int,
+    angle_deg: float,
+) -> tuple[float, float]:
+    """Rotate a (row, col) point about the crop centre by *angle_deg* (CCW).
+
+    Matches the rotation applied to the image by ``scipy.ndimage.rotate`` with
+    ``reshape=False``, which rotates about the image centre.
+    """
+    cy, cx = crop_h / 2.0, crop_w / 2.0
+    rad = np.radians(angle_deg)
+    cos_a, sin_a = np.cos(rad), np.sin(rad)
+    dy, dx = py - cy, px - cx
+    new_dy = dy * cos_a - dx * sin_a
+    new_dx = dy * sin_a + dx * cos_a
+    return cy + new_dy, cx + new_dx
+
+
 class SeptumService:
-    def __init__(self, base_movie_root: Path, qc_repo: QCRepository, audit_service: AuditService):
+    def __init__(
+        self,
+        base_movie_root: Path,
+        qc_repo: QCRepository,
+        audit_service: AuditService,
+        al_service: Any = None,
+    ):
         self.base_root = base_movie_root
         self.qc_repo = qc_repo
         self.audit_service = audit_service
+        self.al_service = al_service
+
 
     def _find_sequence_linkage(self, exp: str, film: str, cell_id: int):
         linkage_path = self.base_root / exp / "sequence_linkage.json"
@@ -416,6 +480,20 @@ class SeptumService:
                     
                     "offset": offset
                 }
+            # Check Local QC status for mistracked flag
+            is_mistracked = False
+            if cell_id is not None:
+                from ..qc_schema import LocalCellQC
+                rev_state = self.qc_repo.load_review_state(exp, film)
+                if not rev_state and "_" in film:
+                    parts = film.split('_')
+                    seq_target = f"{parts[0]}_{parts[-1]}"
+                    rev_state = self.qc_repo.load_review_state(exp, seq_target)
+                cell_st = QCRepository.get_status_for_cell(rev_state, cell_id)
+                is_mistracked = (cell_st == LocalCellQC.MISTRACKED.value)
+
+            cell_data["mistracked"] = is_mistracked
+
             return {
                 "status": "success",
                 "data": cell_data,
@@ -510,6 +588,31 @@ class SeptumService:
 
         offsets[cid_str] = offset
 
+        label_source = getattr(req, "label_source", None) or "cell"
+
+        # Update pattern_center_row/col in cell_data.csv if provided
+        if (
+            getattr(req, "pattern_center_row", None) is not None
+            and getattr(req, "pattern_center_col", None) is not None
+            and local_start is not None
+        ):
+            data_csv = tracked_dir / f"cell_{req.cell_id}_data.csv"
+            if data_csv.is_file():
+                try:
+                    df_data = pd.read_csv(data_csv)
+                    if "time_point" in df_data.columns:
+                        mask_dp = df_data["time_point"] == local_start
+                        if mask_dp.any():
+                            df_data.loc[mask_dp, "pattern_center_row"] = float(
+                                req.pattern_center_row
+                            )
+                            df_data.loc[mask_dp, "pattern_center_col"] = float(
+                                req.pattern_center_col
+                            )
+                            df_data.to_csv(data_csv, index=False)
+                except Exception as exc:
+                    print(f"Error updating pattern_center in cell_data.csv: {exc}")
+
         cell_intervals[cid_str] = {
             "has_septum": bool(req.has_septum),
             "start_aligned": start_aligned,
@@ -519,7 +622,7 @@ class SeptumService:
             "start_aligned_2": start_aligned_2,
             "end_aligned_2": end_aligned_2,
             "white_septum_2": bool(req.is_white_septum_2),
-            "label_source": "cell",
+            "label_source": label_source,
         }
 
         new_rev = self.qc_repo.save_septum(req.experiment, req.film, data)
@@ -599,7 +702,7 @@ class SeptumService:
                 end_idx=local_end if req.has_septum and local_end is not None else -1,
                 start_idx_2=local_start_2 if has_second and local_start_2 is not None else -1,
                 end_idx_2=local_end_2 if has_second and local_end_2 is not None else -1,
-                label_source="cell",
+                label_source=label_source,
                 start_aligned=start_aligned,
                 end_aligned=end_aligned,
                 start_aligned_2=start_aligned_2,
@@ -608,6 +711,7 @@ class SeptumService:
                 white_septum_2=bool(req.is_white_septum_2),
             )
             training_export["path"] = str(exported_path)
+
         except Exception as exc:
             training_export = {"status": "error", "message": str(exc)}
             print(f"Error exporting training sample for cell {req.cell_id}: {exc}")
@@ -698,9 +802,13 @@ class SeptumService:
                     sequence=req.sequence,
                     global_cell_id=req.global_cell_id,
                     film_index=films.index(f_name),
+                    label_source=req.label_source,
+                    pattern_center_row=req.pattern_center_row,
+                    pattern_center_col=req.pattern_center_col,
                     note=req.note,
                     annotator=req.annotator
                 )
+
                 
                 last_res = self._save_single_film_label(film_req, user)
                 
@@ -911,21 +1019,266 @@ class SeptumService:
         except Exception as e:
             raise ValidationError(f"Inference exception: {e}")
 
+    def rotated_crop_with_prediction(
+        self,
+        exp: str,
+        film: str,
+        cell_id: int,
+        frame: int,
+        channel: str = "bf",
+        crop_size: int = 160,
+    ) -> Dict[str, Any]:
+        """Return a rotation-normalised single-frame crop plus per-frame AI probabilities.
+
+        The crop is rotated so the cell's major axis (from ``regionprops.orientation``
+        computed on the RLE mask) runs along the image *height*.  The existing
+        ``predict_septum()`` inference path is reused — no second model instance
+        or separate forward pass is created.
+
+        Parameters
+        ----------
+        exp : str
+            Experiment ID (e.g. ``"M156"``).
+        film : str
+            Film name (e.g. ``"3_BF2_F0"``).
+        cell_id : int
+            Local cell identifier within this film.
+        frame : int
+            Zero-based local frame index (``time_point`` column in the masks CSV).
+        channel : str
+            ``"bf"`` or ``"gfp"`` — selects which frame file and RLE column to use.
+        crop_size : int
+            Side length (pixels) of the square crop before *and* after rotation.
+
+        Returns
+        -------
+        dict with keys:
+            ``image_b64``            base64-encoded JPEG of the rotated crop
+            ``rotation_deg``         applied rotation (CCW degrees; negative = CW)
+            ``crop_size``            actual crop side length used
+            ``centroid_in_crop``     [row, col] of mask centroid in the padded crop
+            ``state_prob``           per-frame septum-state probability (0–1) or null
+            ``start_prob``           per-frame septum-start probability (0–1) or null
+            ``end_prob``             per-frame septum-end probability (0–1) or null
+            ``warning``              model confidence caveat string
+            ``model_metrics``        dict of held-out benchmark values
+            ``overlay``              sub-dict with ``septum_center_in_crop`` ([row, col] or null)
+        """
+        import base64
+        import io as _io
+        from PIL import Image as _PILImage
+        from scipy.ndimage import rotate as _ndimage_rotate
+        from skimage.io import imread as _sk_imread
+
+        # ---- 1. Load masks CSV ----------------------------------------
+        csv_path = (
+            self.base_root / exp / film
+            / f"TrackedCells_{film}" / f"cell_{cell_id}_masks.csv"
+        )
+        if not csv_path.is_file():
+            raise NotFoundError(f"Cell masks CSV not found: {csv_path}")
+        df_masks = pd.read_csv(csv_path)
+
+        # ---- 2. Find RLE for the requested frame ----------------------
+        preferred_rle = "rle_gfp" if channel == "gfp" else "rle_bf"
+        fallback_rle = "rle_bf" if preferred_rle == "rle_gfp" else "rle_gfp"
+        rle_col = preferred_rle if preferred_rle in df_masks.columns else fallback_rle
+        if rle_col not in df_masks.columns:
+            raise ValidationError(f"No RLE column found in {csv_path}")
+
+        if "time_point" in df_masks.columns:
+            mask_rows = df_masks[df_masks["time_point"] == frame]
+        elif frame < len(df_masks):
+            mask_rows = df_masks.iloc[[frame]]
+        else:
+            mask_rows = pd.DataFrame()
+
+        if mask_rows.empty:
+            raise NotFoundError(
+                f"Frame {frame} not found in {csv_path} "
+                f"(total rows: {len(df_masks)})"
+            )
+        rle = str(mask_rows.iloc[0].get(rle_col, ""))
+
+        # ---- 3. Locate and load the raw frame image -------------------
+        c_num = 1 if channel == "gfp" else 0
+        frames_dir = self.base_root / exp / film / f"Frames_{film}"
+        frame_files = sorted(
+            f for f in frames_dir.glob(f"*_t_{frame:03d}_c_{c_num}.tif")
+            if not f.name.startswith(".")
+        )
+        if not frame_files:
+            # Graceful fallback to channel 0
+            frame_files = sorted(
+                f for f in frames_dir.glob(f"*_t_{frame:03d}_c_0.tif")
+                if not f.name.startswith(".")
+            )
+        if not frame_files:
+            raise NotFoundError(
+                f"Frame image not found for t={frame} in {frames_dir}"
+            )
+        img = _sk_imread(str(frame_files[0]))
+        img_h, img_w = img.shape[:2]
+
+        # ---- 4. Decode mask → centroid + rotation angle ---------------
+        rotation_deg = 0.0
+        cy, cx = img_h // 2, img_w // 2   # fallback if no mask
+
+        mask = np.zeros((img_h, img_w), dtype=np.uint8)
+        if rle and rle.strip() and rle.lower() != "nan":
+            try:
+                from ..schemas import validate_and_decode_rle as _decode_rle
+                mask = _decode_rle(rle, img_h, img_w)
+                ys, xs = np.where(mask > 0)
+                if ys.size > 0:
+                    cy = int(np.mean(ys))
+                    cx = int(np.mean(xs))
+                    rotation_deg = _rotation_angle_from_mask(mask)
+            except Exception:
+                pass
+
+        # ---- 5. Crop a square window centred on the mask centroid -----
+        half = crop_size // 2
+        y0 = max(0, cy - half)
+        y1 = min(img_h, cy + half)
+        x0 = max(0, cx - half)
+        x1 = min(img_w, cx + half)
+
+        crop_raw = img[y0:y1, x0:x1]
+        if crop_raw.size == 0:
+            crop_raw = np.zeros((crop_size, crop_size), dtype=np.uint8)
+
+        # Pad symmetrically to exactly crop_size × crop_size when the crop
+        # was clipped at an image boundary (cell near the edge).
+        padded = np.zeros((crop_size, crop_size), dtype=crop_raw.dtype)
+        ph = min(crop_raw.shape[0], crop_size)
+        pw = min(crop_raw.shape[1], crop_size)
+        oy = (crop_size - ph) // 2
+        ox = (crop_size - pw) // 2
+        padded[oy : oy + ph, ox : ox + pw] = crop_raw[:ph, :pw]
+        crop_img = padded
+
+        # Track where the mask centroid ended up in the padded crop
+        centroid_crop_y = float(cy - y0 + oy)
+        centroid_crop_x = float(cx - x0 + ox)
+
+        # ---- 6. Normalise intensity (p1–p99.5 stretch to uint8) -------
+        af = crop_img.astype(np.float32)
+        flat = af.ravel()
+        valid = flat[flat > 0] if flat.any() else flat
+        if valid.size > 1:
+            p_lo = float(np.percentile(valid, 1.0))
+            p_hi = float(np.percentile(valid, 99.5))
+        else:
+            p_lo, p_hi = 0.0, 255.0
+        if p_hi > p_lo:
+            crop_norm = np.clip(
+                (af - p_lo) / (p_hi - p_lo) * 255.0, 0, 255
+            ).astype(np.uint8)
+        else:
+            crop_norm = crop_img.astype(np.uint8)
+
+        # ---- 7. Rotate crop around its centre -------------------------
+        # scipy.ndimage.rotate rotates CCW for positive angles, about the
+        # array centre, with reshape=False (output stays crop_size × crop_size).
+        rotated_img = _ndimage_rotate(
+            crop_norm,
+            angle=rotation_deg,
+            reshape=False,
+            mode="constant",
+            cval=0,
+            order=1,   # bilinear — fast and artefact-free for uint8
+        )
+
+        # ---- 8. Encode to JPEG → base64 --------------------------------
+        pil_img = _PILImage.fromarray(rotated_img)
+        buf = _io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=85)
+        image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        # ---- 9. Transform labeled septum centre into rotated crop ------
+        overlay_septum = None
+        data_csv = (
+            self.base_root / exp / film
+            / f"TrackedCells_{film}" / f"cell_{cell_id}_data.csv"
+        )
+        if data_csv.is_file():
+            try:
+                df_data = pd.read_csv(data_csv)
+                if "time_point" in df_data.columns:
+                    data_row = df_data[df_data["time_point"] == frame]
+                elif frame < len(df_data):
+                    data_row = df_data.iloc[[frame]]
+                else:
+                    data_row = pd.DataFrame()
+
+                if not data_row.empty:
+                    sc_col = data_row.iloc[0].get("pattern_center_col")
+                    sc_row = data_row.iloc[0].get("pattern_center_row")
+                    if pd.notna(sc_col) and pd.notna(sc_row):
+                        # Full-image → crop → rotated-crop coordinates
+                        sc_crop_y = float(sc_row) - y0 + oy
+                        sc_crop_x = float(sc_col) - x0 + ox
+                        rot_y, rot_x = _rotate_point_in_crop(
+                            sc_crop_y, sc_crop_x,
+                            crop_size, crop_size,
+                            rotation_deg,
+                        )
+                        overlay_septum = [round(rot_y, 1), round(rot_x, 1)]
+            except Exception:
+                pass
+
+        # ---- 10. Extract per-frame AI probabilities -------------------
+        # Reuse the existing predict_septum() path — no second inference.
+        # For single-film mode, sequence_indices[i] == local frame index.
+        state_prob = start_prob = end_prob = None
+        warning = None
+        model_metrics = None
+        try:
+            pred = self.predict_septum(exp, film, cell_id)
+            warning = pred.get("warning")
+            model_metrics = pred.get("model_metrics")
+            seq_indices: list[int] = pred.get("sequence_indices", [])
+            probs_all: list[float] = pred.get("probs", [])
+            start_probs_all: list[float] = pred.get("start_probs", [])
+            end_probs_all: list[float] = pred.get("end_probs", [])
+            if frame in seq_indices:
+                i = seq_indices.index(frame)
+                if i < len(probs_all):
+                    state_prob = round(float(probs_all[i]), 4)
+                if i < len(start_probs_all):
+                    start_prob = round(float(start_probs_all[i]), 4)
+                if i < len(end_probs_all):
+                    end_prob = round(float(end_probs_all[i]), 4)
+        except Exception as exc:
+            warning = (warning or "") + f" [inference unavailable: {exc}]"
+
+        return {
+            "status": "success",
+            "image_b64": image_b64,
+            "rotation_deg": round(rotation_deg, 2),
+            "crop_size": crop_size,
+            "centroid_in_crop": [
+                round(centroid_crop_y, 1),
+                round(centroid_crop_x, 1),
+            ],
+            "state_prob": state_prob,
+            "start_prob": start_prob,
+            "end_prob": end_prob,
+            "warning": warning,
+            "model_metrics": model_metrics,
+            "overlay": {
+                "septum_center_in_crop": overlay_septum,
+            },
+        }
+
     def get_cached_ai_suggestion(
         self,
         exp: str,
         sequence: str,
         global_cell_id: str,
     ) -> Dict[str, Any]:
-        """Look up a pre-computed AI suggestion from an offline batch run,
-        if one exists. This is intentionally separate from predict_septum():
-        that endpoint always runs the model live and never persists its
-        result (review_only), so a saved cell can never be silently treated
-        as AI-confirmed. This method only ever READS a file that some
-        external batch process wrote - the app itself never writes to it -
-        so there's no risk of the live "Run AI" flow and this cached-lookup
-        flow stepping on each other.
-        """
+        """Look up a pre-computed AI suggestion from an offline batch run."""
         cache = self.qc_repo.load_ai_cache(exp, sequence)
         suggestions = cache.get("suggestions", {})
         entry = suggestions.get(str(global_cell_id))
@@ -938,3 +1291,213 @@ class SeptumService:
             "source": cache.get("source"),
             "data": entry,
         }
+
+    # =========================================================================
+    # Mobile Septum Review Tool Methods
+    # =========================================================================
+
+    def _get_mobile_septum_state_path(self, exp: str, film: str) -> Path:
+        exp_dir = self.qc_repo._resolve_exp_dir(exp)
+        return exp_dir / film / f"mobile_septum_review_state_{film}.json"
+
+    def _load_mobile_septum_state(self, exp: str, film: str) -> Dict[str, Any]:
+        path = self._get_mobile_septum_state_path(exp, film)
+        if not path.is_file():
+            return {"mobile_labels_saved_count": 0, "reviewed_frames": {}}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    data = {}
+                data.setdefault("mobile_labels_saved_count", 0)
+                data.setdefault("reviewed_frames", {})
+                return data
+        except Exception:
+            return {"mobile_labels_saved_count": 0, "reviewed_frames": {}}
+
+    def _save_mobile_septum_state(self, exp: str, film: str, state_data: Dict[str, Any]) -> None:
+        path = self._get_mobile_septum_state_path(exp, film)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = json.dumps(state_data, indent=2)
+        from ..repositories.mask_repository import atomic_write_text
+        atomic_write_text(path, content)
+
+    def get_mobile_septum_stats(self, exp: str, film: str) -> Dict[str, Any]:
+        state = self._load_mobile_septum_state(exp, film)
+        return {
+            "status": "success",
+            "experiment": exp,
+            "film": film,
+            "mobile_labels_saved_count": int(state.get("mobile_labels_saved_count", 0)),
+            "total_reviewed": len(state.get("reviewed_frames", {})),
+        }
+
+    def get_mobile_septum_batch(
+        self,
+        exp: str,
+        film: str,
+        count: int = 20,
+        crop_size: int = 160,
+    ) -> Dict[str, Any]:
+        state = self._load_mobile_septum_state(exp, film)
+        reviewed = state.get("reviewed_frames", {})
+
+        tracked_dir = (
+            self.qc_repo._resolve_exp_dir(exp) / film / f"TrackedCells_{film}"
+        )
+        if not tracked_dir.is_dir():
+            return {
+                "status": "success",
+                "experiment": exp,
+                "film": film,
+                "items": [],
+                "mobile_labels_saved_count": state.get("mobile_labels_saved_count", 0),
+            }
+
+        items = []
+        cell_files = sorted(
+            [f for f in tracked_dir.glob("cell_*_masks.csv") if not f.name.startswith(".")],
+            key=lambda p: int(re.search(r"cell_(\d+)_masks", p.name).group(1)) if re.search(r"cell_(\d+)_masks", p.name) else 0
+        )
+
+        for cf in cell_files:
+            if len(items) >= count:
+                break
+            m = re.search(r"cell_(\d+)_masks", cf.name)
+            if not m:
+                continue
+            cid = int(m.group(1))
+            try:
+                df = pd.read_csv(cf)
+                if df.empty:
+                    continue
+                frames = list(range(0, len(df), max(1, len(df) // 3)))[:3]
+                for f_idx in frames:
+                    key = f"{cid}_{f_idx}"
+                    if key in reviewed:
+                        continue
+                    try:
+                        crop_data = self.rotated_crop_with_prediction(
+                            exp, film, cid, f_idx, channel="bf", crop_size=crop_size
+                        )
+                        crop_data["experiment"] = exp
+                        crop_data["film"] = film
+                        crop_data["cell_id"] = cid
+                        crop_data["frame"] = f_idx
+                        crop_data["item_key"] = key
+                        items.append(crop_data)
+                        if len(items) >= count:
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+
+        return {
+            "status": "success",
+            "experiment": exp,
+            "film": film,
+            "items": items,
+            "mobile_labels_saved_count": int(state.get("mobile_labels_saved_count", 0)),
+        }
+
+    def save_mobile_septum_review(self, data: Dict[str, Any], user: str = "anonymous") -> Dict[str, Any]:
+        from skimage.io import imread as _sk_imread
+        exp = data.get("experiment")
+        film = data.get("film")
+        cell_id_val = data.get("cell_id")
+        frame_val = data.get("frame")
+        has_septum = bool(data.get("has_septum", False))
+        stroke_center = data.get("stroke_center_in_crop")  # [y_rot, x_rot]
+        crop_size = int(data.get("crop_size", 160))
+
+        if not exp or not film or cell_id_val is None or frame_val is None:
+            raise ValidationError("experiment, film, cell_id, and frame are required")
+
+        cell_id = int(cell_id_val)
+        frame = int(frame_val)
+
+        pattern_row = None
+        pattern_col = None
+
+        if has_septum and stroke_center and len(stroke_center) == 2:
+            try:
+                y_rot, x_rot = float(stroke_center[0]), float(stroke_center[1])
+                csv_path = (
+                    self.qc_repo._resolve_exp_dir(exp) / film
+                    / f"TrackedCells_{film}" / f"cell_{cell_id}_masks.csv"
+                )
+                df_masks = pd.read_csv(csv_path)
+                rle_col = "rle_bf" if "rle_bf" in df_masks.columns else ("rle_gfp" if "rle_gfp" in df_masks.columns else None)
+                if rle_col:
+                    rle = str(df_masks.iloc[frame][rle_col])
+                    frames_dir = self.qc_repo._resolve_exp_dir(exp) / film / f"Frames_{film}"
+                    f_files = sorted([f for f in frames_dir.glob("*_t_*_c_*.tif") if not f.name.startswith(".")])
+                    if f_files:
+                        img = _sk_imread(str(f_files[0]))
+                        h, w = img.shape[:2]
+                        from ..schemas import validate_and_decode_rle as _decode_rle
+                        mask = _decode_rle(rle, h, w)
+                        rotation_deg = _rotation_angle_from_mask(mask)
+                        ys, xs = np.where(mask > 0)
+                        if ys.size > 0:
+                            cy, cx = int(np.mean(ys)), int(np.mean(xs))
+                            half = crop_size // 2
+                            y0 = max(0, cy - half)
+                            x0 = max(0, cx - half)
+                            ph = min(h - y0, crop_size)
+                            pw = min(w - x0, crop_size)
+                            oy = (crop_size - ph) // 2
+                            ox = (crop_size - pw) // 2
+
+                            # Inverse rotate by -rotation_deg
+                            y_crop, x_crop = _rotate_point_in_crop(
+                                y_rot, x_rot, crop_size, crop_size, -rotation_deg
+                            )
+                            pattern_row = round(y_crop - oy + y0, 1)
+                            pattern_col = round(x_crop - ox + x0, 1)
+            except Exception as exc:
+                print(f"Inverse rotation transform error: {exc}")
+
+        req = SaveSeptumRequest(
+            experiment=exp,
+            film=film,
+            cell_id=str(cell_id),
+            has_septum=has_septum,
+            start_frame=frame if has_septum else None,
+            end_frame=frame if has_septum else None,
+            label_source="mobile_septum_review",
+            pattern_center_row=pattern_row,
+            pattern_center_col=pattern_col,
+            note=f"Labeled via mobile septum review tool (frame={frame})",
+            annotator=user,
+        )
+
+        res = self.save_septum_label(req, user=user)
+
+        state = self._load_mobile_septum_state(exp, film)
+        key = f"{cell_id}_{frame}"
+        reviewed = state.get("reviewed_frames", {})
+        if key not in reviewed:
+            state["mobile_labels_saved_count"] = int(state.get("mobile_labels_saved_count", 0)) + 1
+        reviewed[key] = {
+            "has_septum": has_septum,
+            "pattern_center": [pattern_row, pattern_col] if (pattern_row and pattern_col) else None,
+            "timestamp": datetime.now().isoformat(),
+            "label_source": "mobile_septum_review",
+        }
+        state["reviewed_frames"] = reviewed
+        self._save_mobile_septum_state(exp, film, state)
+
+        al_info = {}
+        if self.al_service:
+            try:
+                al_info = self.al_service.record_label_saved()
+            except Exception as exc:
+                print(f"Active learning record label error: {exc}")
+
+        res["mobile_labels_saved_count"] = state["mobile_labels_saved_count"]
+        res["al_info"] = al_info
+        return res
+
+

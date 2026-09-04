@@ -1,5 +1,5 @@
 server:
-  host: 127.0.0.1
+  host: 0.0.0.0
   port: 5001
   debug: false
   secret_key: "dev-tracking-corrector-secret-key-change-in-lab-server"
@@ -9,6 +9,16 @@ movie_roots:
   nas: "/Volumes/Movies"
 
 experiments:
+  "2026_08_28_M160":
+    enabled: true
+    display_name: "M160"
+    linkage_file: "sequence_linkage.json"
+    tracked_dir_template: "TrackedCells_{film}"
+    frames_dir_template: "Frames_{film}"
+    masks_dir_template: "Masks_{film}"
+    channels:
+      - bf
+      - gfp
   "2026_07_16_M156":
     enabled: true
     display_name: "M156"

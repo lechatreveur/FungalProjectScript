@@ -1,3 +1,4 @@
+import re
 import cv2
 import numpy as np
 import pandas as pd
@@ -6,12 +7,148 @@ from tifffile import imread
 from skimage.measure import label
 from flask import Blueprint, jsonify, request, current_app
 
-from typing import Optional, Dict, Any, List
+
+import shutil
+from typing import Optional, Dict, Any, List, Tuple
 from ..schemas import SaveMasksRequest, validate_and_decode_rle, encode_mask_to_rle
 from ..security import resolve_under_root
 from .frames_bp import resolve_gt_keyframe
 
 masks_bp = Blueprint("masks", __name__)
+
+
+def normalize_cell_key(global_cells: Dict[str, Any], cell_id: str, sequence: Optional[str] = None) -> str:
+    s_id = str(cell_id).strip()
+    if s_id in global_cells:
+        return s_id
+    if sequence and f"{sequence}_cell_{s_id}" in global_cells:
+        return f"{sequence}_cell_{s_id}"
+    for k in global_cells:
+        if k == s_id or k.endswith(f"cell_{s_id}") or (s_id.isdigit() and k.endswith(f"_{s_id}")):
+            return k
+    return s_id
+
+
+def check_and_duplicate_shared_local_cell(
+    movie_root: Path,
+    exp: str,
+    sequence: str,
+    target_film: str,
+    f_idx: int,
+    current_cell_id: str,
+    local_cid: int,
+    tool: str,
+    films: List[str],
+    global_cells: Dict[str, List[int]]
+) -> Tuple[int, Optional[List[int]], bool]:
+    """
+    Checks if local_cid in target_film is shared by another global cell that is
+    adjacent/sister to current_cell_id. If tool is 'brush' or 'eraser', duplicates
+    the local cell file and updates sequence linkage for current_cell_id.
+    
+    Returns: (effective_local_cid, updated_track, was_duplicated)
+    """
+    cur_key = normalize_cell_key(global_cells, current_cell_id, sequence)
+    cur_track = global_cells.get(cur_key, [])
+
+    if tool not in ["brush", "eraser"]:
+        return local_cid, cur_track, False
+
+    if local_cid is None or local_cid <= 0:
+        return local_cid, cur_track, False
+
+    if not cur_track:
+        return local_cid, cur_track, False
+
+    # 1. Find all other global cells in this sequence sharing local_cid at f_idx
+    sharing_cells = []
+    for other_id, other_track in global_cells.items():
+        if other_id != cur_key:
+            if f_idx < len(other_track) and other_track[f_idx] == local_cid:
+                sharing_cells.append((other_id, other_track))
+
+    if not sharing_cells:
+        return local_cid, cur_track, False
+
+    # 2. Check if at least one sharing cell is adjacent/sister
+    is_adjacent = False
+    for other_id, other_track in sharing_cells:
+        diverged = False
+        check_indices = list(range(f_idx + 1, min(len(cur_track), len(other_track)))) + list(range(f_idx - 1, -1, -1))
+        for test_idx in check_indices:
+            t_cid1 = cur_track[test_idx] if test_idx < len(cur_track) else -1
+            t_cid2 = other_track[test_idx] if test_idx < len(other_track) else -1
+            if t_cid1 > 0 and t_cid2 > 0:
+                if t_cid1 != t_cid2:
+                    diverged = True
+                    test_film = films[test_idx]
+                    t_dir = resolve_under_root(movie_root, Path(exp) / test_film / f"TrackedCells_{test_film}")
+                    p1 = t_dir / f"cell_{t_cid1}_masks.csv" if t_dir else None
+                    p2 = t_dir / f"cell_{t_cid2}_masks.csv" if t_dir else None
+                    if p1 and p2 and p1.exists() and p2.exists():
+                        try:
+                            df1 = pd.read_csv(p1)
+                            df2 = pd.read_csv(p2)
+                            col1 = 'rle_gfp' if 'FL' in test_film and 'rle_gfp' in df1.columns else 'rle_bf'
+                            col2 = 'rle_gfp' if 'FL' in test_film and 'rle_gfp' in df2.columns else 'rle_bf'
+                            
+                            c1_x, c1_y, c2_x, c2_y = None, None, None, None
+                            for _, r in df1.iterrows():
+                                if pd.notna(r.get(col1)) and str(r.get(col1)).strip():
+                                    m1 = validate_and_decode_rle(str(r[col1]), int(r['height']), int(r['width']))
+                                    ys, xs = m1.nonzero()
+                                    if len(xs) > 0:
+                                        c1_x, c1_y = float(xs.mean()), float(ys.mean())
+                                        break
+                            for _, r in df2.iterrows():
+                                if pd.notna(r.get(col2)) and str(r.get(col2)).strip():
+                                    m2 = validate_and_decode_rle(str(r[col2]), int(r['height']), int(r['width']))
+                                    ys, xs = m2.nonzero()
+                                    if len(xs) > 0:
+                                        c2_x, c2_y = float(xs.mean()), float(ys.mean())
+                                        break
+                            if c1_x is not None and c2_x is not None:
+                                dist = np.sqrt((c1_x - c2_x)**2 + (c1_y - c2_y)**2)
+                                if dist <= 300.0:
+                                    is_adjacent = True
+                                    break
+                        except Exception:
+                            pass
+                    is_adjacent = True
+                    break
+        if is_adjacent:
+            break
+        if not diverged:
+            is_adjacent = True
+            break
+
+    if not is_adjacent:
+        return local_cid, cur_track, False
+
+    # 3. Duplicate local cell in target_film
+    t_dir = resolve_under_root(movie_root, Path(exp) / target_film / f"TrackedCells_{target_film}")
+    if not t_dir or not t_dir.exists():
+        return local_cid, cur_track, False
+
+    max_cid = 0
+    for p in t_dir.glob("cell_*_masks.csv"):
+        if p.name.startswith("._"): continue
+        m = re.match(r"^cell_(\d+)_masks\.csv$", p.name)
+        if m:
+            max_cid = max(max_cid, int(m.group(1)))
+
+    new_local_cid = max_cid + 1
+    src_csv = t_dir / f"cell_{local_cid}_masks.csv"
+    dst_csv = t_dir / f"cell_{new_local_cid}_masks.csv"
+
+    if src_csv.exists():
+        shutil.copy2(src_csv, dst_csv)
+
+    new_track = list(cur_track)
+    if f_idx < len(new_track):
+        new_track[f_idx] = new_local_cid
+
+    return new_local_cid, new_track, True
 
 @masks_bp.route("/api/cell_masks", methods=["GET"])
 def get_cell_masks():
@@ -127,6 +264,74 @@ def get_cell_masks():
     })
 
 
+def find_matching_local_cell(movie_root: Path, exp: str, film: str, local_t: int, user_rle: str = "", click_x: int = None, click_y: int = None) -> Optional[int]:
+    """Finds the local cell ID in TrackedCells_<film> that matches the user selected mask or coordinate."""
+    film_dir = resolve_under_root(movie_root, Path(exp) / film / f"TrackedCells_{film}")
+    if not film_dir or not film_dir.exists():
+        return None
+        
+    r_col = "rle_gfp" if "FL" in film else "rle_bf"
+    
+    target_c = None
+    user_mask = None
+    if user_rle and user_rle != "nan":
+        try:
+            user_mask = validate_and_decode_rle(user_rle, 2000, 2000)
+            ys, xs = np.where(user_mask > 0)
+            if len(ys) > 0:
+                target_c = (float(np.mean(xs)), float(np.mean(ys)))
+        except Exception:
+            pass
+    elif click_x is not None and click_y is not None:
+        target_c = (float(click_x), float(click_y))
+        
+    if target_c is None:
+        return None
+        
+    best_cid = None
+    best_score = 0
+    
+    for p in film_dir.glob("cell_*_masks.csv"):
+        if p.name.startswith("._"):
+            continue
+        m = re.match(r"^cell_(\d+)_masks\.csv$", p.name)
+        if not m:
+            continue
+        cid = int(m.group(1))
+        
+        try:
+            df = pd.read_csv(p)
+        except Exception:
+            continue
+            
+        if r_col not in df.columns:
+            continue
+        row = df[df["time_point"] == local_t]
+        if row.empty:
+            continue
+            
+        cand_rle = str(row.iloc[0].get(r_col, ""))
+        if not cand_rle or cand_rle == "nan":
+            continue
+            
+        if user_mask is not None:
+            try:
+                cand_mask = validate_and_decode_rle(cand_rle, 2000, 2000)
+                inter = int(np.sum(user_mask & cand_mask))
+                if inter > best_score:
+                    best_score = inter
+                    best_cid = cid
+            except Exception:
+                pass
+        elif click_x is not None and click_y is not None:
+            if _point_in_rle(cand_rle, int(click_x), int(click_y)):
+                return cid
+                
+    if user_mask is not None and best_score > 0:
+        return best_cid
+    return None
+
+
 @masks_bp.route("/api/save_mask", methods=["POST"])
 def save_mask():
     data = request.get_json() or {}
@@ -161,26 +366,83 @@ def save_mask():
         else:
             target_film = films[0] if films else req.sequence
             local_cid = track[0] if track else -1
-            
-    if local_cid is None or local_cid == -1:
-        try:
-            local_cid = int(str(req.cell_id).split("_cell_")[-1])
-        except ValueError:
-            local_cid = 1
 
-    # Auto-sync track linkage if slot was unlinked or changed
+
+    if local_cid is None or local_cid == -1:
+        # Unlinked slot: find overlapping existing local cell or allocate new unique cid in target_film
+        found_cid = None
+        cfg = current_app.extensions["config"]
+        if req.changes and len(req.changes) > 0:
+            gt_t = req.changes[0].time_point
+            rle_val = getattr(req.changes[0], "new_rle", getattr(req.changes[0], "rle", ""))
+            k_res = resolve_gt_keyframe(req.experiment, req.sequence, req.film, gt_t, frames_svc)
+            local_t = k_res.get("frame_idx", 0)
+            
+            if rle_val:
+                found_cid = find_matching_local_cell(cfg.local_movie_root, req.experiment, target_film, local_t, user_rle=rle_val)
+                
+        if found_cid is not None:
+            local_cid = found_cid
+        else:
+            # Allocate next available local ID in target_film
+            t_dir = resolve_under_root(cfg.local_movie_root, Path(req.experiment) / target_film / f"TrackedCells_{target_film}")
+            max_cid = 0
+            if t_dir and t_dir.exists():
+                for p in t_dir.glob("cell_*_masks.csv"):
+                    if p.name.startswith("._"): continue
+                    m = re.match(r"^cell_(\d+)_masks\.csv$", p.name)
+                    if m:
+                        max_cid = max(max_cid, int(m.group(1)))
+            local_cid = max_cid + 1
+
+    # Auto-sync track linkage in sequence_linkage.json: update -1 to local_cid
     if req.sequence and 'f_idx' in locals() and f_idx < len(track) and track[f_idx] != local_cid:
         track[f_idx] = local_cid
         linkage_repo = current_app.extensions.get("linkage_repository")
         if linkage_repo:
             try:
                 raw_data, rev = linkage_repo.load_linkage(req.experiment)
-                if req.sequence in raw_data and "global_cells" in raw_data[req.sequence]:
-                    cell_key = str(req.cell_id) if str(req.cell_id) in raw_data[req.sequence]["global_cells"] else f"{req.sequence}_cell_{req.cell_id}"
-                    raw_data[req.sequence]["global_cells"][cell_key] = track
+                seq_obj = raw_data.get("sequences", raw_data)
+                if req.sequence in seq_obj and "global_cells" in seq_obj[req.sequence]:
+                    cell_key = normalize_cell_key(seq_obj[req.sequence]["global_cells"], req.cell_id, req.sequence)
+                    seq_obj[req.sequence]["global_cells"][cell_key] = track
                     linkage_repo.save_linkage(req.experiment, raw_data)
+                    current_app.logger.info(f"Auto-linked {req.sequence} global cell {req.cell_id} on film {target_film} -> local #{local_cid}")
             except Exception as e:
                 current_app.logger.warning(f"Could not auto-sync linkage: {e}")
+
+    # Check for auto-duplication when brush/eraser modifies a shared adjacent local cell
+    if req.sequence and 'f_idx' in locals() and local_cid and local_cid > 0:
+        tool_used = getattr(req, "tool", "select") or "select"
+        if tool_used in ["brush", "eraser"]:
+            cfg = current_app.extensions["config"]
+            new_cid, updated_track, was_dup = check_and_duplicate_shared_local_cell(
+                cfg.local_movie_root,
+                req.experiment,
+                req.sequence,
+                target_film,
+                f_idx,
+                str(req.cell_id),
+                local_cid,
+                tool_used,
+                films,
+                global_cells
+            )
+            if was_dup:
+                local_cid = new_cid
+                track = updated_track
+                linkage_repo = current_app.extensions.get("linkage_repository")
+                if linkage_repo:
+                    try:
+                        raw_data, rev = linkage_repo.load_linkage(req.experiment)
+                        seq_obj = raw_data.get("sequences", raw_data)
+                        if req.sequence in seq_obj and "global_cells" in seq_obj[req.sequence]:
+                            ck = normalize_cell_key(seq_obj[req.sequence]["global_cells"], req.cell_id, req.sequence)
+                            seq_obj[req.sequence]["global_cells"][ck] = track
+                            linkage_repo.save_linkage(req.experiment, raw_data)
+                            current_app.logger.info(f"Auto-duplicated shared local cell in {req.sequence} global cell {req.cell_id} on film {target_film} -> local #{local_cid}")
+                    except Exception as e:
+                        current_app.logger.warning(f"Could not auto-sync linkage after duplication: {e}")
 
     if not target_film:
         target_film = req.sequence or req.experiment
@@ -261,6 +523,7 @@ def save_mask():
         "revision": new_rev,
         "film": target_film,
         "cell_id": local_cid,
+        "track": track if req.sequence else None,
         "training_sync": training_sync_res
     })
 
@@ -360,10 +623,16 @@ def identify_cell():
     base_root = frames_svc.config.local_movie_root
     local_cid = None
 
+    # Search at local_t and slight neighbor frames for robustness
+    t_candidates = [local_t]
+    for delta in [1, -1, 2, -2, 3, -3]:
+        tc = local_t + delta
+        if tc >= 0:
+            t_candidates.append(tc)
+
     # 1. Fast path: check TrackedCells CSVs directly via analytic RLE intervals (<1ms)
     tracked_dir = base_root / exp / target_film / f"TrackedCells_{target_film}"
     if tracked_dir.exists():
-        rle_col = "rle_gfp" if "FL" in target_film else "rle_bf"
         for csv_file in sorted(tracked_dir.glob("cell_*_masks.csv")):
             if csv_file.name.startswith("."):
                 continue
@@ -374,22 +643,30 @@ def identify_cell():
 
             try:
                 df = pd.read_csv(csv_file)
-                rows = df[df["time_point"] == local_t]
-                if rows.empty:
+                if df.empty:
                     continue
-                val = str(rows.iloc[0].get(rle_col, "")).strip()
-                if not val or val == "nan":
-                    alt_col = "rle_bf" if rle_col == "rle_gfp" else "rle_gfp"
-                    val = str(rows.iloc[0].get(alt_col, "")).strip()
-                if not val or val == "nan":
+                H = int(df.iloc[0].get("height", 2000))
+                W = int(df.iloc[0].get("width", 2000))
+                if x_val < 0 or y_val < 0 or x_val >= W or y_val >= H:
                     continue
 
-                H = int(rows.iloc[0].get("height", 2000))
-                W = int(rows.iloc[0].get("width", 2000))
-                if 0 <= x_val < W and 0 <= y_val < H:
-                    if _point_in_rle(val, x_val, y_val, H, W):
-                        local_cid = cid
+                found = False
+                for t_cand in t_candidates:
+                    rows = df[df["time_point"] == t_cand]
+                    if rows.empty:
+                        continue
+                    for rle_col in ["rle_gfp", "rle_bf"]:
+                        if rle_col in df.columns:
+                            val = str(rows.iloc[0].get(rle_col, "")).strip()
+                            if val and val != "nan":
+                                if _point_in_rle(val, x_val, y_val, H, W):
+                                    local_cid = cid
+                                    found = True
+                                    break
+                    if found:
                         break
+                if found:
+                    break
             except Exception:
                 continue
 
@@ -412,7 +689,6 @@ def identify_cell():
                             local2global = frames_svc.local_to_global_map(exp, target_film, sequence)
                             ident = frames_svc.seg_label_identity(exp, target_film, local_t, seg, H, W, local2global, sequence=sequence)
                             if hit_lbl in ident:
-                                # Found mapped cell identity
                                 local_cid = hit_lbl
                             else:
                                 local_cid = hit_lbl
@@ -431,10 +707,24 @@ def identify_cell():
         global_cells = seq_info.get("global_cells", {})
         if target_film in films_list:
             f_idx = films_list.index(target_film)
-            for gid, track in global_cells.items():
-                if f_idx < len(track) and track[f_idx] == local_cid:
-                    global_cid = gid
-                    break
+            
+            # If current_cell_id already matches this local_cid, keep it!
+            current_cell_id = data.get("current_cell_id")
+            if current_cell_id and current_cell_id in global_cells:
+                cur_track = global_cells[current_cell_id]
+                if f_idx < len(cur_track) and cur_track[f_idx] == local_cid:
+                    global_cid = current_cell_id
+                else:
+                    for gid, track in global_cells.items():
+                        if f_idx < len(track) and track[f_idx] == local_cid:
+                            global_cid = gid
+                            break
+            else:
+                for gid, track in global_cells.items():
+                    if f_idx < len(track) and track[f_idx] == local_cid:
+                        global_cid = gid
+                        break
+
 
     return jsonify({
         "status": "success",
@@ -442,5 +732,6 @@ def identify_cell():
         "local_cell_id": local_cid,
         "film": target_film
     })
+
 
 

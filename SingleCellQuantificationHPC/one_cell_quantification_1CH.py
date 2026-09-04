@@ -18,6 +18,13 @@ import numpy as np
 import pandas as pd
 from skimage.io import imread
 from skimage.measure import regionprops, label
+import torch
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+os.environ['OMP_NUM_THREADS'] = '8'
+os.environ['MKL_NUM_THREADS'] = '8'
+os.environ['OPENBLAS_NUM_THREADS'] = '8'
+torch.set_num_threads(8)
 
 # Project path(s)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,6 +44,7 @@ from Cell_tracking_functions import (
 
 from quant_helpers import (
     quantify_one_object,            # GFP main entry (unchanged)
+    save_strip_from_tiles,
 )
 
 from bf_pattern import bf_pattern_only
@@ -58,8 +66,18 @@ parser.add_argument('--min_area', type=int, default=2500, help="Minimum area thr
 parser.add_argument('--update_existing', action='store_true', help="Only update existing rows (skip tracking if masks CSV is valid).")
 parser.add_argument('--seed_from_csv', action='store_true', help="Use the existing masks.csv at t=0 as the seed mask instead of searching seg.tif.")
 
+parser.add_argument('--do_plot', action='store_true',
+                    help='Enable plotting single cell crops and gamma overlays.')
 parser.add_argument('--no_plot', action='store_true',
                     help='Skip plotting single cell crops.')
+parser.add_argument('--make_strips', action='store_true',
+                    help='Build a vertical strip PNG (one 32x112 tile per quantified '
+                         'frame, stacked) directly from the quantification pass, for '
+                         'the active --track_channel. Independent of plotting: cheap '
+                         'and safe to leave on for HPC production runs even when '
+                         '--no_plot / the full do_plot debug-image suite is off.')
+parser.add_argument('--seg-backend', choices=['legacy', 'cellpose_overexposed'], default='legacy',
+                    help='Segmentation & tracking backend: "legacy" (default) or "cellpose_overexposed".')
 
 args = parser.parse_args()
 
@@ -71,15 +89,21 @@ z_index         = args.z_index   # kept for compatibility (not used in filenames
 direction_mode  = args.direction
 update_existing = args.update_existing
 track_channel   = args.track_channel.lower()  # 'bf' or 'gfp'
-do_plot = False
+seg_backend     = args.seg_backend.lower()
+do_plot         = args.do_plot
+make_strips     = args.make_strips
 
 # =========================
 # Paths
 # =========================
-output_frames_folder        = os.path.join(working_dir, file_name, f"Frames_{file_name}")
-output_masks_folder         = os.path.join(working_dir, file_name, f"Masks_{file_name}")
-
-output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}")
+if seg_backend == 'cellpose_overexposed':
+    output_frames_folder = os.path.join(working_dir, file_name, f"Frames_{file_name}_overexposed")
+    output_masks_folder = os.path.join(working_dir, file_name, f"Masks_{file_name}_overexposed")
+    output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}_cpsam_overexp")
+else:
+    output_frames_folder = os.path.join(working_dir, file_name, f"Frames_{file_name}")
+    output_masks_folder = os.path.join(working_dir, file_name, f"Masks_{file_name}")
+    output_tracked_cells_folder = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}")
 direction_mode = 'forward' # AI tracker only runs forward
 
 # No subfolders under Masks_<file_name> anymore
@@ -502,6 +526,154 @@ def track_one_direction(t_seq, ref_start_mask, channel='bf',
     return results
 
 
+def preprocess_overexposed_u8(img_raw):
+    """
+    Overexposed frames are already pre-computed on disk; returning the raw image directly.
+    """
+    return img_raw
+
+
+def track_cellpose_overexposed(t_seq, initial_mask, frame_path_func, model_cache_key='cpsam_model_cache'):
+    """
+    Segmentation & tracking using CellposeSAM on overexposed image crops.
+    Log parameters:
+      smooth_sigma = 1.0, bg_sigma = 20.0, p_stretch = (5, 95), gamma = 0.4
+      linking_dist_max = 30.0 px
+    """
+    import torch
+    from cellpose import models
+
+    use_gpu = torch.cuda.is_available() or (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available())
+    
+    if model_cache_key in sys.modules:
+        model = sys.modules[model_cache_key]
+    else:
+        print(f"[seg-backend=cellpose_overexposed] Initializing CellposeModel ('cpsam', gpu={use_gpu})...", flush=True)
+        print("[seg-backend=cellpose_overexposed] Params: smooth_sigma=0.0, bg_sigma=30.0, p_stretch=(0,60), gamma=1.00, diameter=80.0, min_size=500", flush=True)
+        model = models.CellposeModel(gpu=use_gpu, pretrained_model='cpsam')
+        sys.modules[model_cache_key] = model
+
+    H, W = initial_mask.shape
+    if initial_mask.sum() > 0:
+        ey, ex = np.where(initial_mask)
+        med_y, med_x = np.mean(ey), np.mean(ex)
+    else:
+        med_y, med_x = H / 2.0, W / 2.0
+
+    global_cy = med_y
+    global_cx = med_x
+
+    results = {}
+    prev_area = float(initial_mask.sum())
+
+    for t in t_seq:
+        frame_p = frame_path_func(t)
+        img_raw_full = imread(frame_p)
+        img_proc_full = preprocess_overexposed_u8(img_raw_full)
+
+        # Dynamic chasing crop centering around global_cy, global_cx
+        cy = int(np.clip(round(global_cy), 150, H - 150))
+        cx = int(np.clip(round(global_cx), 150, W - 150))
+        r0, r1 = cy - 150, cy + 150
+        c0, c1 = cx - 150, cx + 150
+
+        # Local tracking coordinates relative to the current crop
+        curr_y = global_cy - r0
+        curr_x = global_cx - c0
+
+        img_proc_crop = img_proc_full[r0:r1, c0:c1]
+        m_instances, _, _ = model.eval(img_proc_crop, diameter=80.0, min_size=500)
+        n_instances = np.max(m_instances)
+
+        # Get previous mask in the current frame's crop coordinate system
+        prev_mask_crop = results[t-1]["mask"][r0:r1, c0:c1] if (t > 0 and t-1 in results and results[t-1]["mask"].any()) else initial_mask[r0:r1, c0:c1]
+
+        best_id = 0
+        best_score = -1.0
+        for label_id in range(1, n_instances + 1):
+            inst_mask = (m_instances == label_id)
+            ys, xs = np.where(inst_mask)
+            if len(ys) == 0: continue
+            my, mx = np.mean(ys), np.mean(xs)
+            dist = np.hypot(my - curr_y, mx - curr_x)
+            
+            iou = 0.0
+            if prev_mask_crop is not None and prev_mask_crop.any():
+                intersection = np.logical_and(prev_mask_crop, inst_mask).sum()
+                union = np.logical_or(prev_mask_crop, inst_mask).sum()
+                if union > 0:
+                    iou = intersection / union
+                    
+            if iou > 0.05:
+                score = 100.0 + iou
+            else:
+                score = 1.0 / (1.0 + dist)
+                
+            if score > best_score:
+                best_score = score
+                best_id = label_id
+
+        full_mask = np.zeros((H, W), dtype=bool)
+        if best_id > 0:
+            mask_crop_sel = (m_instances == best_id)
+            ys, xs = np.where(mask_crop_sel)
+            my, mx = np.mean(ys), np.mean(xs)
+            area = len(ys)
+            
+            # Check for huge area jump
+            rej = (max(area, prev_area) / max(1, min(area, prev_area))) > 1.8 if prev_area > 0 else False
+            
+            if not rej:
+                # Update tracking center and prev_area ONLY if not rejected
+                global_cy = r0 + my
+                global_cx = c0 + mx
+                prev_area = float(area)
+
+                full_mask[r0:r1, c0:c1] = mask_crop_sel
+                overlap = compute_overlap(initial_mask, full_mask) if t == 0 else compute_overlap(results[t-1]["mask"], full_mask)
+                pen = area_change_penalty(area, prev_area)
+                sc = overlap - 0.35 * pen
+                
+                results[t] = {
+                    "mask": full_mask,
+                    "touch": touches_border(full_mask),
+                    "overlap": float(overlap),
+                    "score": float(sc),
+                    "area": area,
+                    "area_penalty": float(pen),
+                    "huge_jump_rejected": False,
+                    "selector_mode": "cellpose_overexposed",
+                    "composition": "single"
+                }
+            else:
+                # Discard merged/split candidate, but keep last good tracking center and area
+                results[t] = {
+                    "mask": full_mask, # empty mask
+                    "touch": False,
+                    "overlap": 0.0,
+                    "score": -1e9,
+                    "area": 0,
+                    "area_penalty": 0.0,
+                    "huge_jump_rejected": True,
+                    "selector_mode": "cellpose_overexposed_failed",
+                    "composition": "single"
+                }
+        else:
+            results[t] = {
+                "mask": full_mask,
+                "touch": False,
+                "overlap": 0.0,
+                "score": -1e9,
+                "area": 0,
+                "area_penalty": 0.0,
+                "huge_jump_rejected": True,
+                "selector_mode": "cellpose_overexposed_failed",
+                "composition": "single"
+            }
+
+    return results
+
+
 # 
 # =========================
 # Main
@@ -528,7 +700,7 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
             sys.exit(1)
         frame_number = len(gfp_frame_files)
     else:
-        _, _, bf_frame_files  = FindMovieMaxMin(CH_IDX)
+        bf_max, bf_min, bf_frame_files  = FindMovieMaxMin(CH_IDX)
         if len(bf_frame_files) == 0:
             print(f"[error] No frames found for detected channel c_{CH_IDX}.")
             sys.exit(1)
@@ -565,7 +737,15 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
                 print(f"[track] Backed up existing masks CSV to: {bak_path}")
 
         # 1) Seed mask initialization
-        if args.seed_from_csv and is_valid_csv(masks_csv_path):
+        legacy_csv = os.path.join(working_dir, file_name, f"TrackedCells_{file_name}", f"cell_{cell_id}_masks.csv")
+        if os.path.exists(legacy_csv):
+            print(f"[info] Reading initial seed mask for cell {cell_id} at t=0 from legacy CSV: {legacy_csv}")
+            df_leg = pd.read_csv(legacy_csv)
+            rle_col = 'rle_gfp' if (track_channel == 'gfp' and 'rle_gfp' in df_leg.columns) else 'rle_bf' if 'rle_bf' in df_leg.columns else df_leg.columns[-1]
+            rle_str = df_leg.iloc[0][rle_col]
+            H, W = int(df_leg.iloc[0]['height']), int(df_leg.iloc[0]['width'])
+            initial_mask = np.asarray(rle_decode(rle_str, (H, W)), bool) if isinstance(rle_str, str) and rle_str else np.zeros((H, W), bool)
+        elif args.seed_from_csv and is_valid_csv(masks_csv_path):
             print(f"[track] Seeding from existing CSV at t=0: {masks_csv_path}")
             df = pd.read_csv(masks_csv_path)
             rle_col = 'rle_gfp' if track_channel == 'gfp' else 'rle_bf'
@@ -583,7 +763,15 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
             initial_mask = (labeled_mask == cell_id)
 
         # 2) Tracking in detected channel only
-        if track_channel == 'gfp':
+        if seg_backend == 'cellpose_overexposed':
+            print(f"[track] Using CellposeSAM Overexposed pre-computed masks for {track_channel.upper()} channel tracking.")
+            forward_sel = track_one_direction(
+                t_seq=list(range(frame_number)),
+                ref_start_mask=initial_mask,
+                channel='gfp',
+            )
+            backward_sel = None
+        elif track_channel == 'gfp':
             # FL/GFP: use the deterministic overlap + area-penalty tracker instead of the
             # learned ai_tracker. The ai_tracker's GFP checkpoint (tracker_checkpoints_m93_gfp)
             # was trained exclusively on M93 GFP data and has never seen this experiment's
@@ -768,6 +956,8 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
             os.makedirs(cell_plot_folder_1, exist_ok=True)
             os.makedirs(cell_plot_folder_2, exist_ok=True)
 
+        strip_tiles_gfp = [] if make_strips else None
+
         # Get dynamic range for GFP (computed earlier)
         for t in range(len(mask_rows)):
             print(f"[t={t}] (GFP)")
@@ -786,16 +976,25 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
                 plot_dir=cell_plot_folder_gfp, ep_refs=ep_refs,
                 gfp_min=gfp_min, gfp_max=gfp_max, cell_id=str(cell_id),
                 do_plot=do_plot, touches_border_flag=bool(row.get('touches_border_gfp', False)),
-                allow_split=True
+                allow_split=True, strip_tiles=strip_tiles_gfp
             )
             for r in rows_gfp:
                 r['channel'] = 'gfp'
             time_series_data.extend(rows_gfp)
 
+        if make_strips:
+            strip_path = os.path.join(cell_plot_folder_gfp, f"cell_{cell_id}_gfp_strip.png")
+            if save_strip_from_tiles(strip_tiles_gfp, strip_path):
+                print(f"[strips] Saved GFP vertical strip ({len(strip_tiles_gfp)} frames) to: {strip_path}")
+            else:
+                print(f"[strips] No GFP frames quantified for cell {cell_id}; strip not written.")
+
     else:
         # BF quantification (pattern-only pipeline)
-        if do_plot:
+        if do_plot or make_strips:
             os.makedirs(cell_plot_folder_bf, exist_ok=True)
+
+        strip_tiles_bf = [] if make_strips else None
 
         for t in range(len(mask_rows)):
             print(f"[t={t}] (BF)")
@@ -824,11 +1023,20 @@ if __name__ == "__main__" or os.environ.get("RUN_IN_PROCESS") == "TRUE":
                 cell_id=str(cell_id),
                 posterior_cutoff=0.05,
                 side_px=50,
-                do_plot=do_plot
+                do_plot=do_plot,
+                strip_tiles=strip_tiles_bf,
+                bf_min=bf_min, bf_max=bf_max
             )
             if bf_row is not None:
                 bf_row['channel'] = 'bf'
                 time_series_data.append(bf_row)
+
+        if make_strips:
+            strip_path = os.path.join(cell_plot_folder_bf, f"cell_{cell_id}_bf_strip.png")
+            if save_strip_from_tiles(strip_tiles_bf, strip_path):
+                print(f"[strips] Saved BF vertical strip ({len(strip_tiles_bf)} frames) to: {strip_path}")
+            else:
+                print(f"[strips] No BF frames quantified for cell {cell_id}; strip not written.")
 
     # Save quantification table
     df_cell = pd.DataFrame(time_series_data)

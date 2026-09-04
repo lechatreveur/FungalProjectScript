@@ -27,6 +27,7 @@ def load_cell_areas(gids: list[str]) -> list[float]:
     root_sept17 = Path("/Volumes/X10 Pro/Movies/2025_09_17/")
     root_m133 = Path("/Volumes/X10 Pro/Movies/2026_04_29_M133/")
     root_m135 = Path("/Volumes/X10 Pro/Movies/2026_04_30_M135/")
+    root_m156 = Path("/Volumes/X10 Pro/Movies/2026_07_16_M156/")
     
     for gid in gids:
         area = np.nan
@@ -73,6 +74,22 @@ def load_cell_areas(gids: list[str]) -> list[float]:
                         source = row.source
                         film = f"A14_10_20min_{field}"
                         csv_path = root_m135 / film / f"TrackedCells_{film}" / f"cell_{orig_id}_data.csv"
+                    else:
+                        continue
+                else:
+                    continue
+            elif gid.startswith("M156_"):
+                map_p = root_m156 / "unaligned_pairs_quant" / "id_map_unaligned.csv"
+                if map_p.exists():
+                    df_map = pd.read_csv(map_p)
+                    local_id = int(gid.split("_")[1])
+                    sub = df_map[df_map.new_cell_id == local_id]
+                    if not sub.empty:
+                        row = sub.iloc[0]
+                        orig_str = str(row.get('orig_str_id', ''))
+                        orig_id = int(orig_str.split(':')[1]) if ':' in orig_str else int(row.get('local_fl_id', local_id))
+                        film = str(row.get('film', ''))
+                        csv_path = root_m156 / film / f"TrackedCells_{film}" / f"cell_{orig_id}_data.csv"
                     else:
                         continue
                 else:
@@ -141,8 +158,8 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
         div_times, alignments = load_observed_division_times(exp_cfg)
         no_septum_shifts = estimate_missing_division_times(exp_cfg, div_times)
         
-        # Build lookup table of cell metadata by local_cell_id
-        meta_by_cid = {row['local_cell_id']: row for _, row in metadata.iterrows()}
+        # Build lookup table of cell metadata by table_row_id
+        meta_by_cid = {row['table_row_id']: row for _, row in metadata.iterrows()}
         
         # For each loaded cell belonging to this experiment, map metadata
         for i, gid in enumerate(gids_loaded):
@@ -171,7 +188,7 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
             if row_meta is None:
                 continue
                 
-            cid = row_meta['local_cell_id']
+            cid = row_meta['table_row_id']
             gcid = row_meta['global_cell_id']
             source = row_meta['source']
             field = row_meta['field']
@@ -182,7 +199,13 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
             p2 = X_traj_raw[i][:, 1].tolist()
             
             # QC Status
-            qc_status = qc_map.get(gcid, "good")
+            try:
+                from tracking_corrector.qc_schema import GlobalCellQC
+                default_st = GlobalCellQC.GOOD.value
+            except ImportError:
+                default_st = "good"
+            qc_status = qc_map.get(gcid, default_st)
+
             
             # Division timing relative calculations
             div_time = div_times.get(gcid)
@@ -254,7 +277,7 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
             records.append({
                 "observation_id": gid,
                 "experiment": name,
-                "local_cell_id": cid,
+                "table_row_id": cid,
                 "original_cell_id": orig_id,
                 "global_cell_id": gcid,
                 "field": field,
@@ -361,17 +384,19 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
     for gid in gids:
         r = included_cells.loc[gid]
         t = r["time_to_division"]
+        exp_name = r["experiment"]
+        exp_cfg = global_cfg.experiments.get(exp_name)
+        cycle_len = exp_cfg.cycle_length_min if exp_cfg else (900.0 if gid.startswith("M135_") else 300.0)
         
         t_val = None
         if t is not None:
-            t_val = max(t, -900.0 if gid.startswith("M135_") else -300.0)
+            t_val = max(t, -cycle_len)
             
         time_rel_display.append(t_val)
         
         if t_val is None:
             cycle_display.append(None)
         else:
-            cycle_len = 900.0 if gid.startswith("M135_") else 300.0
             score = (t_val + cycle_len) / cycle_len if t_val < 0 else t_val / cycle_len
             score = max(0.0, min(1.0, score))
             cycle_display.append(round(score, 4))
@@ -408,7 +433,7 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
                     obs_id,
                     r["time_alignment_method"] or "N/A",
                     r["global_cell_id"],
-                    r["local_cell_id"],
+                    r["table_row_id"],
                     r["film"]
                 ])
                 
@@ -482,13 +507,26 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
         p2 = r["trajectory_p2"]
         
         strip_b64 = ""
-        strip_path = strips_dir / f"{obs_id}.png"
+        strip_path = strips_dir / f"{r['experiment']}_{r['table_row_id']}.png"
         if not strip_path.exists():
-            strip_path = strips_dir / f"{r['experiment']}_{r['local_cell_id']}.png"
+            strip_path = strips_dir / f"{obs_id}.png"
+        if not strip_path.exists():
+            strip_path = strips_dir / f"{r['global_cell_id']}.png"
             
         if strip_path.exists():
-            with open(strip_path, "rb") as img_f:
-                strip_b64 = "data:image/png;base64," + base64.b64encode(img_f.read()).decode("utf-8")
+            try:
+                from PIL import Image
+                import io
+                im = Image.open(strip_path)
+                new_w = 56
+                new_h = max(16, int(im.height * (new_w / float(im.width))))
+                im_resized = im.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                im_resized.save(buf, format="WEBP", quality=70)
+                strip_b64 = "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
+            except Exception:
+                with open(strip_path, "rb") as img_f:
+                    strip_b64 = "data:image/png;base64," + base64.b64encode(img_f.read()).decode("utf-8")
                 
         traj_dict[obs_id] = {
             "p1": p1,
@@ -502,10 +540,15 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
             },
             "strip": strip_b64,
             "idx": idx,
+            "experiment": r["experiment"],
+            "sequence": r["field"],
+            "field": r["field"],
             "gcid": r["global_cell_id"],
             "global_cell_id": r["global_cell_id"],
-            "local_gfp_id": r["local_cell_id"],
+            "table_row_id": r["table_row_id"],
             "gfp_film": r["film"],
+            "qc_status": r["qc_status"],
+            "qc_marked": r["qc_status"],
             "fit_params": r["fit_params"],
             "f": [
                 pol1_mid_display[idx],
@@ -542,7 +585,7 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
             template_dir
         )
         
-    nas_html = Path("/Volumes/Ian/UMAP/fc_ae_3d_manifold_explorer_curated_Sept17.html")
+    nas_html = Path("/Volumes/Ian/UMAP") / global_cfg.output_filename
     if os.path.exists(nas_html.parent):
         try:
             import shutil
@@ -552,3 +595,4 @@ def run_pipeline(config_path: str, strict: bool = False) -> None:
             logger.warning(f"⚠️ Could not sync dashboard to NAS: {e}")
             
     logger.info("🎉 Pipeline execution completed successfully!")
+

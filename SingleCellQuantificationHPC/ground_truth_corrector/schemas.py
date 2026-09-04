@@ -63,6 +63,7 @@ class SaveMasksRequest(BaseModel):
     changes: Optional[List[SaveMasksFramePatch]] = None
     expected_revision: Optional[str] = None
     provenance: str = "manual_gt"
+    tool: Optional[str] = "select"
 
     @validator("cell_id")
     def validate_cell_id(cls, v: str) -> str:

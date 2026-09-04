@@ -32,7 +32,7 @@ function updateQCUI() {
         const btn = document.getElementById(`cell-item-${c.global_id}`);
         if (btn) {
             const st = state.qc[c.global_id] || 'pending';
-            btn.classList.remove('qc-good', 'qc-bad', 'qc-corrected', 'qc-review');
+            btn.classList.remove('qc-good', 'qc-bad', 'qc-corrected', 'qc-review', 'qc-mistracked');
             if (st !== 'pending') {
                 btn.classList.add(`qc-${st}`);
             }
@@ -46,12 +46,16 @@ function updateQCUI() {
         }
     });
 
+    applyCellFilter();
+
     if (state.selectedCell === null) {
         const maskTxt = document.getElementById('maskStatusText');
         if (maskTxt) {
             maskTxt.innerText = 'None';
             maskTxt.className = 'status-badge badge-pending';
         }
+        const banner = document.getElementById('mistrackedNoticeBanner');
+        if (banner) banner.style.display = 'none';
         return;
     }
     const status = state.qc[state.selectedCell] || 'pending';
@@ -63,8 +67,56 @@ function updateQCUI() {
         if (status === 'good') { color = '#10b981'; badgeClass = 'badge-good'; }
         if (status === 'bad') { color = '#ef4444'; badgeClass = 'badge-bad'; }
         if (status === 'corrected' || status === 'review') { color = '#f59e0b'; badgeClass = 'badge-pending'; }
+        if (status === 'mistracked') { color = '#c084fc'; badgeClass = 'badge-mistracked'; }
         maskTxt.style.color = color;
         maskTxt.className = `status-badge ${badgeClass}`;
+    }
+
+    // Toggle active state on status buttons
+    const markGoodBtn = document.getElementById('btnMarkGood');
+    const markBadBtn = document.getElementById('btnMarkBad');
+    const markCorrBtn = document.getElementById('btnMarkCorrected');
+    const markMisBtn = document.getElementById('btnMarkMistracked');
+    if (markGoodBtn) markGoodBtn.classList.toggle('active', status === 'good');
+    if (markBadBtn) markBadBtn.classList.toggle('active', status === 'bad');
+    if (markCorrBtn) markCorrBtn.classList.toggle('active', status === 'corrected' || status === 'review');
+    if (markMisBtn) markMisBtn.classList.toggle('active', status === 'mistracked');
+
+    // Toggle mistracked notice banner
+    const banner = document.getElementById('mistrackedNoticeBanner');
+    if (banner) {
+        banner.style.display = (status === 'mistracked') ? 'block' : 'none';
+    }
+}
+
+function applyCellFilter() {
+    const select = document.getElementById('cellFilterSelect');
+    if (!select) return;
+    const val = select.value;
+    let count = 0;
+    let total = state.cells.length;
+
+    state.cells.forEach(c => {
+        const btn = document.getElementById(`cell-item-${c.global_id}`);
+        if (!btn) return;
+
+        const st = state.qc[c.global_id] || 'pending';
+        const isSuspicious = !!(state.suspicious[c.global_id] && state.suspicious[c.global_id].length > 0);
+
+        let visible = true;
+        if (val === 'mistracked') visible = (st === 'mistracked');
+        else if (val === 'good') visible = (st === 'good');
+        else if (val === 'bad') visible = (st === 'bad');
+        else if (val === 'corrected') visible = (st === 'corrected' || st === 'review');
+        else if (val === 'suspicious') visible = isSuspicious;
+
+        btn.style.display = visible ? 'block' : 'none';
+        if (visible) count++;
+    });
+
+    const countSpan = document.getElementById('cellFilterCount');
+    if (countSpan) {
+        countSpan.innerText = val === 'all' ? `${total}` : `${count}/${total}`;
     }
 }
 

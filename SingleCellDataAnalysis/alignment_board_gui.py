@@ -20,6 +20,15 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, SpanSelector
 from matplotlib.patches import Rectangle
 
+import sys
+from pathlib import Path
+
+_hpc_path = str(Path(__file__).resolve().parent.parent / "SingleCellQuantificationHPC")
+if _hpc_path not in sys.path:
+    sys.path.insert(0, _hpc_path)
+
+from tracking_corrector.repositories.qc_repository import QCRepository
+
 from .septum_gui_utils import (
     build_film_paths,
     discover_cell_mask_csvs,
@@ -40,6 +49,35 @@ from .septum_training_utils import export_film_training_dataset
 
 # Keep widgets alive across function scope
 _LIVE_WIDGETS = []
+
+def resolve_qc_json_path(working_dir: str, film_name: str) -> Optional[str]:
+    """
+    Resolves qc_<target>.json matching QCRepository.get_qc_json_path convention.
+    """
+    p1 = os.path.join(working_dir, film_name, f"qc_{film_name}.json")
+    if os.path.exists(p1):
+        return p1
+
+    p2 = os.path.join(working_dir, film_name, f"TrackedCells_{film_name}", "cell_plots", "gui_labels", "qc_labels.json")
+    if os.path.exists(p2):
+        return p2
+
+    parts = film_name.split('_')
+    if len(parts) >= 3 and parts[1].startswith('FL'):
+        field_name = f"{parts[0]}_{parts[-1]}"
+        p_field1 = os.path.join(working_dir, field_name, f"qc_{field_name}.json")
+        if os.path.exists(p_field1):
+            return p_field1
+        p_field2 = os.path.join(working_dir, field_name, f"TrackedCells_{field_name}", "cell_plots", "gui_labels", "qc_labels.json")
+        if os.path.exists(p_field2):
+            return p_field2
+
+    p_direct = os.path.join(working_dir, f"qc_{film_name}.json")
+    if os.path.exists(p_direct):
+        return p_direct
+
+    return None
+
 
 def review_septum_alignment_board_gui(
     WORKING_DIR: str,
@@ -96,6 +134,23 @@ def review_septum_alignment_board_gui(
 
     # Load multi-film state
     offsets, a_left_map, cell_intervals, global_intervals_map = load_multi_state(film_paths_map, film_cells_map)
+
+    # Load QC status map for cells
+    qc_status_map: Dict[Tuple[str, int], str] = {}
+    for fname in FILM_NAMES:
+        qpath = resolve_qc_json_path(WORKING_DIR, fname)
+        qdata = {}
+        if qpath and os.path.exists(qpath):
+            try:
+                with open(qpath, "r", encoding="utf-8") as f:
+                    qdata = json.load(f)
+            except Exception as e:
+                print(f"[warn] Failed to read QC file {qpath}: {e}")
+
+        cids = film_cells_map.get(fname, [])
+        for cid in cids:
+            st = QCRepository.get_status_for_cell(qdata, cid) or "pending"
+            qc_status_map[(fname, cid)] = st
 
     inference_runner = None
     if FungalInferenceCore is not None:
@@ -157,13 +212,17 @@ def review_septum_alignment_board_gui(
     hide_text = fig.text(0.55, 0.05, "Hide No Septum: OFF (h)", color="gray", fontweight='bold')
     no_sep_status_text = fig.text(0.75, 0.05, "No Septum: OFF (n)", color="gray", fontweight='bold')
     saliency_text = fig.text(0.35, 0.05, "AI Saliency: OFF (V)", color="gray", fontweight='bold')
+    mistracked_status_text = fig.text(0.18, 0.05, "⚡ MISTRACKED", color="#c084fc", fontweight='bold', visible=False)
 
     selection_patches = [Rectangle((0,0),1,1, facecolor=(0.2,0.8,1,0.2), visible=False, zorder=9) for _ in range(n_rows)]
     white_sep_patches = [Rectangle((0,0),1,1, facecolor=(1,0.9,0,0.2), visible=False, zorder=8) for _ in range(n_rows)]
     no_sep_patches = [Rectangle((0,0),1,1, facecolor="purple", alpha=0.25, visible=False, zorder=8) for _ in range(n_rows)]
+    mistracked_patches = [Rectangle((0,0),1,1, facecolor=(0.58,0.11,0.92,0.35), edgecolor="#c084fc", linewidth=2.5, visible=False, zorder=10) for _ in range(n_rows)]
+
     for p in selection_patches: ax_sheet.add_patch(p)
     for p in white_sep_patches: ax_sheet.add_patch(p)
     for p in no_sep_patches: ax_sheet.add_patch(p)
+    for p in mistracked_patches: ax_sheet.add_patch(p)
 
     # State
     label_mode = "global"
@@ -243,6 +302,9 @@ def review_septum_alignment_board_gui(
             p.set_visible(in_view and vis[r] in selected_cell_keys)
             white_sep_patches[r].set_visible(in_view and bool(cell_intervals.get(vis[r], {}).get("white_septum")))
             no_sep_patches[r].set_visible(in_view and (cell_intervals.get(vis[r], {}).get("has_septum", True) is False))
+            is_mis = (in_view and qc_status_map.get(vis[r]) == "mistracked")
+            mistracked_patches[r].set_visible(is_mis)
+
             if in_view:
                 y0 = r * stride
                 p.set_xy((0, y0))
@@ -254,11 +316,19 @@ def review_septum_alignment_board_gui(
                 no_sep_patches[r].set_xy((0, y0))
                 no_sep_patches[r].set_width(ax_sheet.get_xlim()[1])
                 no_sep_patches[r].set_height(tile_size - 1)
+                mistracked_patches[r].set_xy((0, y0))
+                mistracked_patches[r].set_width(ax_sheet.get_xlim()[1])
+                mistracked_patches[r].set_height(tile_size - 1)
 
         row_highlight.set_y(active_row_idx * stride)
         row_highlight.set_width(ax_sheet.get_xlim()[1])
         row_highlight.set_height(tile_size - 1)
         
+        if active_cell_key and qc_status_map.get(active_cell_key) == "mistracked":
+            mistracked_status_text.set_visible(True)
+        else:
+            mistracked_status_text.set_visible(False)
+
         _update_white_septum_status()
         _update_interval_artist()
         _update_title()

@@ -15,6 +15,12 @@ from skimage.segmentation import find_boundaries
 from scipy.ndimage import distance_transform_edt
 from scipy.spatial import cKDTree
 
+from nu_dis_division_prior import (
+    nu_dis_positive_probability,
+    DIVISION_LENGTH_PX_DEFAULT,
+    STD_PX_DEFAULT,
+)
+
 
 
 
@@ -636,7 +642,9 @@ def E_step(X_data, A, params, Yi, pi, eps, params_fixed):
 def M_step_unlinked(X_data, gammas, Yi, pi, eps, params_fixed,
                     prev_params=None,
                     lam_mn=0.2, lam_I=0.2,
-                    alpha_sigma=0.2):
+                    alpha_sigma=0.2,
+                    division_length_px=DIVISION_LENGTH_PX_DEFAULT,
+                    division_length_std_px=STD_PX_DEFAULT):
 
     
     gammaY2Z0 = gammas['Y2Z0']
@@ -775,19 +783,35 @@ def M_step_unlinked(X_data, gammas, Yi, pi, eps, params_fixed,
     
             # smooth sigma (super robust)
             sigma_mn_Y2_new = _log_smooth_sigma(sigma_mn_Y2_new, prev_sigma_mn, alpha_sigma, eps=eps)
-    
+
         # ---- smooth nucleus intensity ----
         prev_mu_I = prev_params.get('mu_I_Y2', None)
         prev_sigma_I = prev_params.get('sigma_I_Y2', None)
-    
+
         if prev_mu_I is not None and prev_sigma_I is not None and N_nu > 1:
             var_prev_I = float(_safe(prev_sigma_I)**2)
             var_ml_I   = float(_safe(sigma_nu_Y2_new)**2)
-    
+
             mu_nu_Y2_new = _kl_shrink_mu(mu_nu_Y2_new, N_nu, var_ml_I, float(prev_mu_I), var_prev_I, lam_I)
             sigma_nu_Y2_new = _log_smooth_sigma(sigma_nu_Y2_new, prev_sigma_I, alpha_sigma, eps=eps)
 
-    
+    # ---- biological division-length prior on nu_dis (n-component of mu_mn_Y2) ----
+    # Before a cell has grown to ~division_length, nu_dis > 0 is not biologically
+    # plausible (see nu_dis_division_prior.py for the literature-derived
+    # division_length/std). P(nu_dis > 0 | cell_length) is a logistic gate that
+    # multiplicatively suppresses the n-component toward 0 well below
+    # division_length_px, and leaves it essentially untouched once the cell has
+    # grown past it. Applied unconditionally (runs even at t=0 when prev_params
+    # is None) and on every M-step iteration -- not just as a one-shot post-hoc
+    # correction -- so the gated position also feeds back into the next E-step's
+    # nucleus responsibilities (gammaY2Z1) via pdf_circular_nucleus_mn, i.e. it
+    # constrains which pixels get labeled "nucleus" at all, not just the
+    # reported scalar.
+    p_nu_dis_pos = nu_dis_positive_probability(
+        major_axis_length, division_length_px, division_length_std_px
+    )
+    mu_mn_Y2_new[1] = mu_mn_Y2_new[1] * p_nu_dis_pos
+
     params_new = {
        
         
@@ -995,8 +1019,19 @@ def ImageQuantification(
     d = np.array([np.cos(orientation), np.sin(orientation)])  # direction in (row, col)
 
     # Instead of using find_contours, get all boundary pixels using find_boundaries.
-    boundary_mask = find_boundaries(cropped_cell_mask, mode='inner')
-    boundary_coords = np.column_stack(np.nonzero(boundary_mask))  # shape (M, 2) in (row, col) coordinates
+    # NOTE: find_boundaries(mode='inner') only flags a foreground pixel as boundary
+    # if it is adjacent to a background pixel *within the array*. When the cell mask
+    # touches the crop's own edge (which it always does at the pole(s)/extrema,
+    # since the crop is exactly the mask's bounding box), there is no background
+    # pixel on that side inside the array, so those pole pixels are silently
+    # dropped from the boundary -- exactly the pixels axis_extrema_points needs to
+    # find endpoints/midpoints. Pad by 1px with background first (same pattern
+    # already used for contour_mask/find_contours above), then subtract the pad
+    # back off the resulting coordinates, so this only affects the boundary pixels
+    # used for endpoint/midpoint search -- cropped_cell_mask itself is untouched.
+    padded_for_boundary = np.pad(cropped_cell_mask, 1, mode='constant', constant_values=False)
+    boundary_mask_padded = find_boundaries(padded_for_boundary, mode='inner')
+    boundary_coords = np.column_stack(np.nonzero(boundary_mask_padded)) - 1  # back to crop-local (row, col) coords
     
     # Set a tolerance (in pixels) to decide if a boundary pixel is "on" the major axis.
     tol = 2.0

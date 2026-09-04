@@ -47,6 +47,18 @@
         </label>
       </div>
 
+      <div id="hide-mistracked-container" style="display: flex; align-items: center; gap: 12px; margin-left: 8px; border-left: 1px solid #475569; padding-left: 12px;">
+        <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; color: #f87171; font-weight: 600;">
+          <input type="checkbox" id="hide-mistracked-checkbox" style="cursor: pointer; width: 14px; height: 14px;">
+          Hide mis-tracked
+        </label>
+        <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; color: #34d399; font-weight: 600;">
+          <input type="checkbox" id="show-only-good-checkbox" style="cursor: pointer; width: 14px; height: 14px;">
+          Show only "good"
+        </label>
+        <span id="qc-sync-status" style="font-size: 0.75rem; color: #10b981; font-weight: 500; margin-left: 4px;">• Synced with Mobile QC</span>
+      </div>
+
       <div id="color-range-container" style="display: flex; align-items: center; gap: 8px; margin-left: 8px; border-left: 1px solid #475569; padding-left: 12px;">
         <label>Min Range:</label>
         <input type="number" id="color-range-min" value="" step="0.1" style="width: 55px;">

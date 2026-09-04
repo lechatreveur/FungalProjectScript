@@ -150,11 +150,16 @@ function drawMask() {
 }
 
 function getCanvasMouseCoords(e) {
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / state.scale;
-    const y = (e.clientY - rect.top) / state.scale;
-    return { x: Math.max(0, Math.min(state.imgWidth - 1, x)), y: Math.max(0, Math.min(state.imgHeight - 1, y)) };
+    const viewport = document.getElementById('canvasViewport');
+    if (!viewport) return { x: 0, y: 0 };
+    const containerRect = viewport.getBoundingClientRect();
+    const mx = e.clientX - containerRect.left;
+    const my = e.clientY - containerRect.top;
+    const mouseX = Math.round((mx - state.panX) / state.scale);
+    const mouseY = Math.round((my - state.panY) / state.scale);
+    return { x: mouseX, y: mouseY };
 }
+
 
 function resetView() {
     const viewport = document.getElementById('canvasViewport');

@@ -102,7 +102,7 @@ def create_movie(file_name, channel, frame_dir, output_dir):
     print(f"Saved movie: {out_path}")
 
 
-def process_ims_file(ims_path, working_dir, model=None):
+def process_ims_file(ims_path, working_dir, model=None, diameter=80.0):
     file_name = os.path.splitext(os.path.basename(ims_path))[0]
     print(f"Processing {file_name}")
     done_flag = os.path.join(working_dir, f"{file_name}/DONE_segmentation.txt")
@@ -137,6 +137,8 @@ def process_ims_file(ims_path, working_dir, model=None):
     if n_channels != 1 or z_stacks != 1:
         print(f"WARNING: Expected (C=1, Z=1) but got (C={n_channels}, Z={z_stacks}) for {file_name}. Proceeding with [0,0].")
 
+    eval_diameter = None if (diameter is None or diameter <= 0) else float(diameter)
+
     with tqdm(total=time_points, desc=f"Segmenting {file_name}") as pbar:
         for t in range(time_points):
             frame_path = os.path.join(output_frames_folder, f"{file_name}_t_{t:03d}_c_0.tif")
@@ -158,9 +160,10 @@ def process_ims_file(ims_path, working_dir, model=None):
             out = model.eval(
                 img,
                 channel_axis=None,
-                diameter=diameter,
+                diameter=eval_diameter,
             )
             masks = out[0]
+
 
             os.makedirs(os.path.dirname(seg_path), exist_ok=True)
             imwrite(seg_path, masks)
@@ -186,6 +189,18 @@ def parse_args():
     p.add_argument("--include", action="append", default=[], help="Filename glob to include")
     p.add_argument("--exclude", action="append", default=[], help="Filename glob to exclude")
     p.add_argument("--list-only", action="store_true", help="Print selected files without segmenting")
+    p.add_argument(
+        "--model_path",
+        type=str,
+        default=None,
+        help="Optional path to a custom/retrained Cellpose model (e.g. ~/.cellpose/models/cpsam_...). If omitted, uses default 'cpsam'.",
+    )
+    p.add_argument(
+        "--diameter",
+        type=float,
+        default=80.0,
+        help="Cell diameter in pixels. Default is 80.0 (use 0 or pass None to auto-estimate).",
+    )
     return p.parse_args()
 
 
@@ -226,7 +241,15 @@ if __name__ == "__main__":
 
     use_gpu = core.use_gpu()
     print(f"[cellpose] use_gpu={use_gpu}")
-    model = models.CellposeModel(gpu=use_gpu)
+    
+    if args.model_path:
+        print(f"[cellpose] Loading custom model: {args.model_path}")
+        model = models.CellposeModel(gpu=use_gpu, pretrained_model=args.model_path)
+    else:
+        print("[cellpose] Using built-in default model (cpsam)")
+        model = models.CellposeModel(gpu=use_gpu)
 
     for f in ims_files:
-        process_ims_file(os.path.join(working_dir, f), working_dir, model=model)
+        process_ims_file(os.path.join(working_dir, f), working_dir, model=model, diameter=args.diameter)
+
+

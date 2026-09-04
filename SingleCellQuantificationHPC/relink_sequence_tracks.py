@@ -277,8 +277,12 @@ def process_relinking(
                 old_tracks = link_data[seq_name].get("global_cells", {})
                 for gid, q in qc_data.items():
                     if q.get("status") in ("good", "corrected") and gid in old_tracks:
-                        preserved_tracks[gid] = old_tracks[gid]
-                print(f"\nFound {len(preserved_tracks)} curated tracks to preserve in {qc_file.name}")
+                        cand_track = old_tracks[gid]
+                        valid_cids = [x for x in cand_track if x != -1]
+                        # Filter out obsolete broadcast dummy tracks [C, C, C, ...]
+                        if len(valid_cids) >= 4 and len(set(valid_cids)) == 1:
+                            continue
+                        preserved_tracks[gid] = cand_track
             except Exception as e:
                 print(f"  [Warning] Failed loading QC for preservation: {e}")
 

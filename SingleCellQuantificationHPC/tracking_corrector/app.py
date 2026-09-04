@@ -28,6 +28,7 @@ from .routes.qc_bp import qc_bp
 from .routes.septum_bp import septum_bp
 from .routes.jobs_bp import jobs_bp
 from .routes.health_bp import health_bp
+from .routes.mistrack_review_bp import mistrack_review_bp
 
 def create_app(cfg: Optional[Config] = None) -> Flask:
     app = Flask(
@@ -52,8 +53,11 @@ def create_app(cfg: Optional[Config] = None) -> Flask:
     masks_service = MasksService(mask_repo, audit_service)
     linkage_service = LinkageService(linkage_repo, audit_service)
     qc_service = QCService(qc_repo, audit_service)
-    septum_service = SeptumService(app_cfg.local_movie_root, qc_repo, audit_service)
+    from .services.active_learning_service import ActiveLearningService
+    al_service = ActiveLearningService(app_cfg.local_movie_root)
+    septum_service = SeptumService(app_cfg.local_movie_root, qc_repo, audit_service, al_service=al_service)
     suspicious_service = SuspiciousService(mask_repo)
+
     quant_service = QuantificationService(app_cfg.local_movie_root)
     cache_service = CacheService(
         app_cfg.cache_root,
@@ -71,7 +75,9 @@ def create_app(cfg: Optional[Config] = None) -> Flask:
     app.config["LINKAGE_SERVICE"] = linkage_service
     app.config["QC_SERVICE"] = qc_service
     app.config["SEPTUM_SERVICE"] = septum_service
+    app.config["ACTIVE_LEARNING_SERVICE"] = al_service
     app.config["SUSPICIOUS_SERVICE"] = suspicious_service
+
     app.config["QUANTIFICATION_SERVICE"] = quant_service
     app.config["CACHE_SERVICE"] = cache_service
     app.config["SYNC_SERVICE"] = sync_service
@@ -98,9 +104,17 @@ def create_app(cfg: Optional[Config] = None) -> Flask:
     app.register_blueprint(septum_bp)
     app.register_blueprint(jobs_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(mistrack_review_bp)
+
+    from septum_alignment_board.routes.board_bp import board_bp
+    app.register_blueprint(board_bp)
 
     @app.route("/")
     def index():
         return render_template("index.html")
+
+    @app.route("/septum_board")
+    def septum_board():
+        return render_template("septum_board.html")
 
     return app

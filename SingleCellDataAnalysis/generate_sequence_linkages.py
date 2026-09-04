@@ -198,9 +198,27 @@ def get_sequence_films(exp_dir):
             if len(actual_ordered) > 1:
                 seq_groups[group_name] = actual_ordered
         return seq_groups
-        
+
+    # Custom grouping logic for M160
+    if "M160" in str(exp_dir):
+        seq_groups = {}
+        for field in ["F0", "F1", "F2"]:
+            # Sequence: FL1, BF1, FL2, BF2, FL3, BF3, FL4, BF4, FL5, BF5, FL6, BF6, FL7
+            # Exclude N1 files (5_1_N1_2_F*) and snap files (5_1_N1_snap_F*)
+            ordered = []
+            for i in range(1, 8):
+                ordered.append(f"5_1_N1_FL{i}_{field}")
+                if i <= 6:
+                    ordered.append(f"5_1_N1_BF{i}_{field}")
+            actual_ordered = [f for f in ordered if f in films]
+            if len(actual_ordered) > 1:
+                seq_groups[f"5_1_N1_{field}"] = actual_ordered
+        return seq_groups
+
     seq_groups = {}
     for f in films:
+        if "snap" in f:
+            continue
         m = re.search(r'(.*?)(FL|BF)(\d*)_(F\d+)', f)
         if m:
             base = m.group(1)
@@ -348,7 +366,8 @@ def generate_linkages(exp_name):
                 
         output_data[group] = {
             "films": films,
-            "global_cells": global_cells
+            "global_cells": global_cells,
+            "lineage": {}
         }
         print(f"  Created {len(global_cells)} global tracks (with unmapped links as -1).")
         
@@ -367,3 +386,4 @@ if __name__ == "__main__":
     generate_linkages("2026_04_30_M135")
     generate_linkages("2026_06_03_M143")
     generate_linkages("2026_07_16_M156")
+    generate_linkages("2026_08_28_M160")

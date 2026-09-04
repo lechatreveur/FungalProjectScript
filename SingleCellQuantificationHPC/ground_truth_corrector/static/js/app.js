@@ -299,12 +299,13 @@ function setupCanvasInteractions() {
     const viewport = document.getElementById('canvasViewport');
     if (!viewport) return;
 
-    // Double click on canvas to select cell
+    // Double click on canvas to select cell (ONLY in population view)
     viewport.addEventListener('dblclick', async (e) => {
+        if (state.viewMode !== 'population') return;
         e.preventDefault();
         e.stopPropagation();
         const coords = getCanvasMouseCoords(e);
-        const scaleFactor = state.viewMode === 'population' ? ((state.imgWidth || 2000) / (canvas.width || 1000)) : 1.0;
+        const scaleFactor = ((state.imgWidth || 2000) / (canvas.width || 1000));
         const imgX = coords.x * scaleFactor;
         const imgY = coords.y * scaleFactor;
         await activateCellAtCoords(imgX, imgY);
@@ -331,14 +332,18 @@ function setupCanvasInteractions() {
 
     viewport.addEventListener('mousedown', async (e) => {
         const coords = getCanvasMouseCoords(e);
+        
+        // Space+Click only selects cell when in Population view
         if (state.isSpaceKeyDown || e.code === 'Space' || e.key === ' ') {
-            e.preventDefault();
-            e.stopPropagation();
-            const scaleFactor = state.viewMode === 'population' ? ((state.imgWidth || 2000) / (canvas.width || 1000)) : 1.0;
-            const imgX = coords.x * scaleFactor;
-            const imgY = coords.y * scaleFactor;
-            await activateCellAtCoords(imgX, imgY);
-            return;
+            if (state.viewMode === 'population') {
+                e.preventDefault();
+                e.stopPropagation();
+                const scaleFactor = ((state.imgWidth || 2000) / (canvas.width || 1000));
+                const imgX = coords.x * scaleFactor;
+                const imgY = coords.y * scaleFactor;
+                await activateCellAtCoords(imgX, imgY);
+                return;
+            }
         }
 
         if (e.button === 1 || e.shiftKey || state.tool === 'pan') {
@@ -359,6 +364,7 @@ function setupCanvasInteractions() {
                 await activateCellAtCoords(imgX, imgY);
                 return;
             }
+
 
             // Segment click in select tool mode (Single Cell view)
             if (state.tool === 'select') {

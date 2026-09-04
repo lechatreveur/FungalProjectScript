@@ -102,9 +102,12 @@ class SaveSeptumRequest(BaseModel):
     offset: int = 0
     sequence: Optional[str] = None
     global_cell_id: Optional[str] = None
-    film_index: Optional[int] = None
+    label_source: Optional[str] = "cell"
+    pattern_center_row: Optional[float] = None
+    pattern_center_col: Optional[float] = None
     note: str = ""
     annotator: str = "anonymous"
+
 
     @validator("cell_id", pre=True)
     def coerce_cell_id_to_str(cls, v: Any) -> str:

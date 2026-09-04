@@ -26,13 +26,43 @@ async function loadCells(exp, target) {
         state.selectedCell = null;
         const cellLbl = document.getElementById('cellIdLabel');
         if (cellLbl) cellLbl.innerText = 'None';
-        const stripContainer = document.getElementById('stripContainer');
-        if (stripContainer) stripContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">No cells available to display.</span>';
         const linkageList = document.getElementById('linkageList');
         if (linkageList) linkageList.innerHTML = '';
         const globalLabel = document.getElementById('currentGlobalCellLabel');
         if (globalLabel) globalLabel.innerText = '';
-        if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        try {
+            const modeParam = `sequence=${target}`;
+            const res = await fetch(`/api/cell_masks?experiment=${exp}&${modeParam}&cell_id=0`);
+            const data = await res.json();
+            state.cellMasks = [];
+            state.numFrames = data.num_frames || 0;
+            state.imgWidth = data.width || 2000;
+            state.imgHeight = data.height || 2000;
+            state.channel = data.track_channel || 'bf';
+            state.filmBoundaries = data.film_boundaries || [];
+            state.localFilmId = data.local_film;
+            state.linkageDetails = data.linkage_details || {};
+            
+            renderLinkageBoard();
+            renderFilmBoundaries();
+            
+            const slider = document.getElementById('timeSlider');
+            if (slider) {
+                slider.max = Math.max(0, state.numFrames - 1);
+                slider.value = 0;
+            }
+            state.currentFrame = 0;
+            const maxTimeLbl = document.getElementById('maxTimeLabel');
+            if (maxTimeLbl) maxTimeLbl.innerText = `t=${Math.max(0, state.numFrames - 1)}`;
+            
+            updateChannelButtons();
+            resetView();
+            await displayFrame();
+        } catch (err) {
+            console.error("Error loading empty sequence view:", err);
+            if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
     }
 
     fetch(`/api/suspicious_cells?experiment=${exp}&sequence=${target}`)
@@ -115,8 +145,6 @@ async function selectCell(cellId) {
     resetView();
     await displayFrame();
     updateQCUI();
-    renderGallery();
-    await loadSeptumLabels(cellId);
     renderSuspiciousTicks();
 }
 
@@ -163,8 +191,6 @@ async function selectLocalCell(cellId, filmId) {
     resetView();
     await displayFrame();
     updateQCUI();
-    renderGallery();
-    await loadSeptumLabels(cellId);
 }
 
 async function exitLocalCellEdit() {

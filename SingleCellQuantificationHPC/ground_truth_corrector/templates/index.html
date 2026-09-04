@@ -149,6 +149,13 @@
                     <span class="info-label">Mask Status:</span>
                     <span id="maskStatusText" class="status-badge badge-pending">Pending</span>
                 </div>
+                <div class="info-row">
+                    <span class="info-label">Completion:</span>
+                    <span id="keyframeCompletionBadge" class="status-badge" style="font-size: 0.72rem; padding: 2px 7px;">-</span>
+                </div>
+                <div id="keyframeProgressBar" style="width: 100%; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; margin: 3px 0 6px 0;" title="Keyframe Mask Completion">
+                    <div id="keyframeProgressFill" style="width: 0%; height: 100%; background: var(--accent-green); transition: width 0.3s ease;"></div>
+                </div>
 
                 <div class="qc-btn-group">
                     <button id="btnMarkGood" class="btn-qc btn-qc-good">Good</button>
@@ -183,12 +190,15 @@
     </div>
 
     <!-- JS Scripts -->
-    <script src="{{ url_for('static', filename='js/state.js') }}?v=20260903_1339"></script>
-    <script src="{{ url_for('static', filename='js/color.js') }}?v=20260903_1339"></script>
-    <script src="{{ url_for('static', filename='js/api.js') }}?v=20260903_1339"></script>
-    <script src="{{ url_for('static', filename='js/canvas.js') }}?v=20260903_1339"></script>
-    <script src="{{ url_for('static', filename='js/cells.js') }}?v=20260903_1339"></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=20260903_1339"></script>
+    <script src="{{ url_for('static', filename='js/state.js') }}?v=20260904_1804"></script>
+    <script src="{{ url_for('static', filename='js/color.js') }}?v=20260904_1804"></script>
+    <script src="{{ url_for('static', filename='js/api.js') }}?v=20260904_1804"></script>
+    <script src="{{ url_for('static', filename='js/canvas.js') }}?v=20260904_1804"></script>
+    <script src="{{ url_for('static', filename='js/cells.js') }}?v=20260904_1804"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=20260904_1804"></script>
 </body>
 </html>
+
+
+
 

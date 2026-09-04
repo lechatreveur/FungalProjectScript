@@ -192,3 +192,33 @@ select:focus, input[type="number"]:focus {
     display: block;
     image-rendering: pixelated;
 }
+
+/* Button styling for QC actions */
+.btn-mistracked {
+    display: inline-block;
+    width: 100%;
+    padding: 8px 14px;
+    margin-top: 8px;
+    background: #ef4444;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.btn-mistracked:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.25);
+}
+
+.btn-mistracked:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+}

@@ -8,24 +8,11 @@ function updateChannelButtons() {
 async function displayFrame() {
     const timeLbl = document.getElementById('currentTimeLabel');
     if (timeLbl) timeLbl.innerText = `t=${state.currentFrame}`;
-    updateGalleryHighlight();
     
     const current = getActiveFilmAndLocalCell();
     if (current.film !== state.lastActiveFilm || current.cellId !== state.lastActiveCellId) {
         state.lastActiveFilm = current.film;
         state.lastActiveCellId = current.cellId;
-        // Only refetch septum labels from the server when we're in plain
-        // navigation mode. While the user is mid-way through setting a
-        // septum endpoint (galleryClickMode is 'start1'/'end1'/'start2'/
-        // 'end2'), a gallery click can legitimately jump the playhead into a
-        // *different film* - e.g. the septum's other endpoint already set
-        // sits in the previous film - and reloading here would overwrite the
-        // in-progress, not-yet-saved input values with whatever is still on
-        // disk, making the endpoint the user just set appear to vanish. See
-        // septum.js header comment for the full cross-film septum rule.
-        if (state.galleryClickMode === 'nav') {
-            await loadSeptumLabels(state.selectedCell);
-        }
     }
 
     const localFilmRow = document.getElementById('localFilmRow');
@@ -63,8 +50,8 @@ async function displayFrame() {
         const img = await loadImage(popUrl);
         if (!img || !canvas || !ctx) return;
         
-        canvas.width = state.imgWidth;
-        canvas.height = state.imgHeight;
+        canvas.width = 1000;
+        canvas.height = 1000;
         canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.scale})`;
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);

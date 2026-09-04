@@ -12,7 +12,16 @@ async function loadCells(exp, target) {
         
         if (cellGrid) {
             cellGrid.innerHTML = state.cells.map(c => {
-                const label = c.display_name.includes('_cell_') ? `Cell ${c.display_name.split('_cell_')[1]}` : c.display_name;
+                let label = c.display_name;
+                if (c.global_id.includes('_cell_')) {
+                    const cid = c.global_id.split('_cell_').pop();
+                    const matchFilm = c.global_id.match(/_((?:FL|BF)\d+)_/);
+                    if (matchFilm) {
+                        label = `${matchFilm[1]} Cell ${cid}`;
+                    } else {
+                        label = `Cell ${cid}`;
+                    }
+                }
                 // Same stable colour the population / mask views use for this cell.
                 const sw = (typeof idToColor === 'function')
                     ? `<span class="cell-swatch" style="background:rgb(${idToColor(stableColorKey(String(c.global_id))).join(',')})"></span>`
@@ -23,6 +32,7 @@ async function loadCells(exp, target) {
                 </div>
             `}).join('');
         }
+
 
         if (state.cells.length > 0) {
             await fetchQC();
@@ -104,6 +114,7 @@ async function selectCell(cellId, options = {}) {
     
     renderFilmBoundaries();
     renderLinkageBoard();
+    updateCompletionUI();
     
     const slider = document.getElementById('timeSlider');
     if (slider) {
@@ -117,8 +128,61 @@ async function selectCell(cellId, options = {}) {
     }
     await displayFrame();
     updateQCUI();
+    updateCompletionUI();
 }
 
+function updateCompletionUI() {
+    const badge = document.getElementById('keyframeCompletionBadge');
+    const fill = document.getElementById('keyframeProgressFill');
+    if (!badge || !fill) return;
+
+    if (!state.selectedCell || !state.cellMasks) {
+        badge.innerText = '-';
+        badge.className = 'status-badge';
+        fill.style.width = '0%';
+        return;
+    }
+
+    const total = state.numFrames || (state.keyframes ? state.keyframes.length : 39);
+    let validCount = 0;
+    const missingKeyframes = [];
+
+    for (let i = 0; i < total; i++) {
+        const m = state.cellMasks[i];
+        if (m && typeof m === 'string' && m.trim() !== '' && m !== 'nan') {
+            validCount++;
+        } else {
+            const kf = state.keyframes && state.keyframes[i] ? state.keyframes[i] : null;
+            if (kf) {
+                missingKeyframes.push(`kf ${i} (${kf.film} t=${kf.local_t})`);
+            } else {
+                missingKeyframes.push(`kf ${i}`);
+            }
+        }
+    }
+
+    const pct = total > 0 ? Math.round((validCount / total) * 100) : 0;
+    fill.style.width = `${pct}%`;
+
+    if (validCount === total && total > 0) {
+        badge.className = 'status-badge badge-good';
+        badge.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+        badge.style.color = 'var(--accent-green)';
+        badge.style.border = '1px solid var(--accent-green)';
+        badge.innerText = `${validCount} / ${total} (100% Complete)`;
+        badge.title = 'All keyframes have valid masks.';
+        fill.style.backgroundColor = 'var(--accent-green)';
+    } else {
+        const missingCount = total - validCount;
+        badge.className = 'status-badge badge-mistracked';
+        badge.style.backgroundColor = 'rgba(245, 158, 11, 0.2)';
+        badge.style.color = 'var(--accent-yellow)';
+        badge.style.border = '1px solid var(--accent-yellow)';
+        badge.innerText = `${validCount} / ${total} (${missingCount} Missing)`;
+        badge.title = `Missing masks on:\n${missingKeyframes.slice(0, 10).join('\n')}${missingKeyframes.length > 10 ? '\n...' : ''}`;
+        fill.style.backgroundColor = 'var(--accent-yellow)';
+    }
+}
 
 function renderLinkageBoard() {
     const list = document.getElementById('linkageList');
@@ -138,12 +202,40 @@ function renderLinkageBoard() {
     for (let i = 0; i < films.length; i++) {
         const curId = local_ids[i] !== undefined ? local_ids[i] : -1;
         const isLinked = curId !== -1;
+
+        // Check keyframe masks for this film
+        let filmKeyframes = [];
+        let validMasksForFilm = 0;
+        if (state.keyframes && state.cellMasks) {
+            for (let k = 0; k < state.keyframes.length; k++) {
+                if (state.keyframes[k].film_idx === i || state.keyframes[k].film === films[i]) {
+                    filmKeyframes.push(k);
+                    const m = state.cellMasks[k];
+                    if (m && typeof m === 'string' && m.trim() !== '' && m !== 'nan') {
+                        validMasksForFilm++;
+                    }
+                }
+            }
+        }
+        const totalFilmKf = filmKeyframes.length || 3;
+        let maskPill = '';
+        if (!isLinked) {
+            maskPill = `<span style="font-size: 0.7rem; color: var(--accent-red); background: rgba(239, 68, 68, 0.15); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(239,68,68,0.3);">Unlinked (-1)</span>`;
+        } else if (validMasksForFilm === totalFilmKf) {
+            maskPill = `<span style="font-size: 0.7rem; color: var(--accent-green); background: rgba(16, 185, 129, 0.15); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.3);">${validMasksForFilm}/${totalFilmKf} masks ✓</span>`;
+        } else {
+            maskPill = `<span style="font-size: 0.7rem; color: var(--accent-yellow); background: rgba(245, 158, 11, 0.15); padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(245,158,11,0.3); font-weight: 600;" title="Missing mask on some keyframes">⚠ ${validMasksForFilm}/${totalFilmKf} masks</span>`;
+        }
+
         html += `
-        <div class="linkage-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px 8px; background: rgba(255,255,255,0.03); border-radius: 6px; border-left: 3px solid ${isLinked ? 'var(--accent-primary)' : 'var(--border-color)'};">
+        <div class="linkage-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px 8px; background: rgba(255,255,255,0.03); border-radius: 6px; border-left: 3px solid ${isLinked ? (validMasksForFilm === totalFilmKf ? 'var(--accent-green)' : 'var(--accent-yellow)') : 'var(--accent-red)'};">
             <div style="cursor: pointer;" onclick="jumpToFilm(${i})" title="Jump to this film">
-                <div style="color: var(--text-muted); font-size: 0.72rem;">${films[i]}</div>
-                <div style="font-weight: 600; font-size: 0.82rem; color: ${isLinked ? 'var(--text-main)' : 'var(--text-muted)'};">
-                    ${isLinked ? `Cell: ${curId}` : 'Unlinked (-1)'}
+                <div style="color: var(--text-muted); font-size: 0.72rem; display: flex; align-items: center; gap: 6px;">
+                    <span>${films[i]}</span>
+                    ${maskPill}
+                </div>
+                <div style="font-weight: 600; font-size: 0.82rem; color: ${isLinked ? 'var(--text-main)' : 'var(--text-muted)'}; margin-top: 2px;">
+                    ${isLinked ? `Local Cell: #${curId}` : 'Unlinked (-1)'}
                 </div>
             </div>
             <div style="display: flex; gap: 4px;">
@@ -223,6 +315,27 @@ function renderFilmBoundaries() {
         tick.title = `Film: ${b.film}`;
         ticksContainer.appendChild(tick);
     });
+
+    // Keyframe dots with green/red status
+    if (state.keyframes && state.cellMasks) {
+        state.keyframes.forEach((kf, kIdx) => {
+            const pct = (kIdx / total) * 100;
+            const dot = document.createElement('div');
+            const hasMask = state.cellMasks[kIdx] && state.cellMasks[kIdx].trim() !== '' && state.cellMasks[kIdx] !== 'nan';
+            dot.style.position = 'absolute';
+            dot.style.left = `calc(${pct}% - 3px)`;
+            dot.style.top = '10px';
+            dot.style.width = '6px';
+            dot.style.height = '6px';
+            dot.style.borderRadius = '50%';
+            dot.style.backgroundColor = hasMask ? 'var(--accent-green)' : 'var(--accent-red)';
+            dot.style.opacity = hasMask ? '0.6' : '0.9';
+            dot.title = `kf ${kIdx} (${kf.film} t=${kf.local_t}): ${hasMask ? 'Mask OK' : 'MISSING MASK'}`;
+            dot.style.cursor = 'pointer';
+            dot.onclick = () => updateCurrentFrame(kIdx);
+            ticksContainer.appendChild(dot);
+        });
+    }
 }
 
 async function fetchQC() {
@@ -353,6 +466,7 @@ async function saveCurrentCell(targetFrame = null) {
             sequence: state.selectedSequence,
             cell_id: state.selectedCell,
             channel: state.channel,
+            tool: state.tool || "select",
             masks: state.cellMasks,
             changes: [
                 {
@@ -374,6 +488,13 @@ async function saveCurrentCell(targetFrame = null) {
                 tag.innerText = 'Synced to Cellpose ✅';
                 tag.style.color = 'var(--accent-green)';
             }
+            // Auto-update linkage board if backend updated track
+            if (data.track && state.linkageDetails) {
+                state.linkageDetails.local_ids = data.track.map(x => parseInt(x));
+            }
+            renderLinkageBoard();
+            renderFilmBoundaries();
+            updateCompletionUI();
             // Mark cell as corrected if not good
             if (!state.qc[state.selectedCell] || state.qc[state.selectedCell].status !== 'good') {
                 await setQC('corrected');
@@ -389,11 +510,18 @@ async function saveCurrentCell(targetFrame = null) {
 }
 
 async function activateCellAtCoords(x, y) {
+    // Disable switching to a global cell when in single-cell mode!
+    // Cell selection in single-cell mode is strictly locked to clicking the list buttons.
+    if (state.viewMode !== 'population') {
+        return;
+    }
+
     const statusText = document.getElementById('autosaveStatus') || document.getElementById('cellIdLabel');
     if (statusText) {
         statusText.innerText = 'Activating cell...';
         statusText.style.color = 'var(--accent-secondary)';
     }
+
 
     const payload = {
         experiment: state.selectedExp,
@@ -401,8 +529,10 @@ async function activateCellAtCoords(x, y) {
         film: state.selectedFilm,
         t: state.currentFrame,
         x: Math.round(x),
-        y: Math.round(y)
+        y: Math.round(y),
+        current_cell_id: state.selectedCell
     };
+
 
     try {
         const res = await fetch('/api/identify_cell', {

@@ -81,8 +81,10 @@ if QC_CSV.exists():
     try:
         qc_df = pd.read_csv(QC_CSV)
         for _, row in qc_df.iterrows():
-            if str(row.get("status", "")).lower() == "corrected":
+            from tracking_corrector.qc_schema import GlobalCellQC
+            if str(row.get("status", "")).lower() == GlobalCellQC.CORRECTED.value:
                 manually_corrected.add(int(row["cell_id"]))
+
         print(f"Skipping {len(manually_corrected)} manually corrected cells: {sorted(manually_corrected)}")
     except Exception as e:
         print(f"[warn] Could not read qc.csv: {e}")

@@ -174,8 +174,8 @@ function setupEventListeners() {
 
     const chanBfBtn = document.getElementById('chanBfBtn');
     const chanGfpBtn = document.getElementById('chanGfpBtn');
-    if (chanBfBtn) chanBfBtn.onclick = () => { state.channel = 'bf'; updateChannelButtons(); displayFrame(); renderGallery(); };
-    if (chanGfpBtn) chanGfpBtn.onclick = () => { state.channel = 'gfp'; updateChannelButtons(); displayFrame(); renderGallery(); };
+    if (chanBfBtn) chanBfBtn.onclick = () => { state.channel = 'bf'; updateChannelButtons(); displayFrame(); };
+    if (chanGfpBtn) chanGfpBtn.onclick = () => { state.channel = 'gfp'; updateChannelButtons(); displayFrame(); };
 
     const viewModeBtn = document.getElementById('viewModeBtn');
     if (viewModeBtn) {
@@ -278,108 +278,17 @@ function setupEventListeners() {
     const markGoodBtn = document.getElementById('btnMarkGood');
     const markBadBtn = document.getElementById('btnMarkBad');
     const markCorrBtn = document.getElementById('btnMarkCorrected');
+    const markMisBtn = document.getElementById('btnMarkMistracked');
     if (markGoodBtn) markGoodBtn.onclick = () => setQC('good');
     if (markBadBtn) markBadBtn.onclick = () => setQC('bad');
     if (markCorrBtn) markCorrBtn.onclick = () => setQC('corrected');
+    if (markMisBtn) markMisBtn.onclick = () => setQC('mistracked');
 
-    const hasSeptumCb1 = document.getElementById('hasSeptumCheckbox');
-    if (hasSeptumCb1) {
-        hasSeptumCb1.onchange = (e) => {
-            const divCont1 = document.getElementById('divisionIntervalContainer');
-            if (divCont1) divCont1.style.display = e.target.checked ? 'flex' : 'none';
-            saveSeptumLabels();
-        };
-    }
-    const startIn1 = document.getElementById('septumStartInput');
-    const endIn1 = document.getElementById('septumEndInput');
-    const whiteCb1 = document.getElementById('whiteSeptumCheckbox');
-    const predSeptBtn = document.getElementById('predictSeptumBtn');
-    if (startIn1) startIn1.onchange = () => saveSeptumLabels();
-    if (endIn1) endIn1.onchange = () => saveSeptumLabels();
-    if (whiteCb1) whiteCb1.onchange = () => saveSeptumLabels();
-    if (predSeptBtn) predSeptBtn.onclick = () => runSeptumAi();
-    
-    const setStartBtn1 = document.getElementById('setSeptumStartBtn');
-    const setEndBtn1 = document.getElementById('setSeptumEndBtn');
-    if (setStartBtn1) {
-        setStartBtn1.onclick = () => {
-            if (startIn1) startIn1.value = state.currentFrame;
-            saveSeptumLabels();
-        };
-    }
-    if (setEndBtn1) {
-        setEndBtn1.onclick = () => {
-            if (endIn1) endIn1.value = state.currentFrame;
-            saveSeptumLabels();
-        };
-    }
-    
-    const hasSeptumCb2 = document.getElementById('hasSeptumCheckbox2');
-    if (hasSeptumCb2) {
-        hasSeptumCb2.onchange = (e) => {
-            const divCont2 = document.getElementById('divisionIntervalContainer2');
-            if (divCont2) divCont2.style.display = e.target.checked ? 'flex' : 'none';
-            saveSeptumLabels();
-        };
-    }
-    const startIn2 = document.getElementById('septumStartInput2');
-    const endIn2 = document.getElementById('septumEndInput2');
-    const whiteCb2 = document.getElementById('whiteSeptumCheckbox2');
-    if (startIn2) startIn2.onchange = () => saveSeptumLabels();
-    if (endIn2) endIn2.onchange = () => saveSeptumLabels();
-    if (whiteCb2) whiteCb2.onchange = () => saveSeptumLabels();
-    
-    const setStartBtn2 = document.getElementById('setSeptumStartBtn2');
-    const setEndBtn2 = document.getElementById('setSeptumEndBtn2');
-    if (setStartBtn2) {
-        setStartBtn2.onclick = () => {
-            if (startIn2) startIn2.value = state.currentFrame;
-            saveSeptumLabels();
-        };
-    }
-    if (setEndBtn2) {
-        setEndBtn2.onclick = () => {
-            if (endIn2) endIn2.value = state.currentFrame;
-            saveSeptumLabels();
-        };
-    }
+    const cellFilterSel = document.getElementById('cellFilterSelect');
+    if (cellFilterSel) cellFilterSel.onchange = () => applyCellFilter();
 
-    const galleryClickNavBtn = document.getElementById('galleryClickNavBtn');
-    const galleryClickStartBtn = document.getElementById('galleryClickStartBtn');
-    const galleryClickEndBtn = document.getElementById('galleryClickEndBtn');
-    const galleryClickStartBtn2 = document.getElementById('galleryClickStartBtn2');
-    const galleryClickEndBtn2 = document.getElementById('galleryClickEndBtn2');
 
-    if (galleryClickNavBtn) {
-        galleryClickNavBtn.onclick = () => {
-            state.galleryClickMode = 'nav';
-            updateGalleryClickModeButtons();
-        };
-    }
-    if (galleryClickStartBtn) {
-        galleryClickStartBtn.onclick = () => {
-            state.galleryClickMode = 'start1';
-            updateGalleryClickModeButtons();
-        };
-    }
-    if (galleryClickEndBtn) {
-        galleryClickEndBtn.onclick = () => {
-            state.galleryClickMode = 'end1';
-            updateGalleryClickModeButtons();
-        };
-    }
-    if (galleryClickStartBtn2) {
-        galleryClickStartBtn2.onclick = () => {
-            state.galleryClickMode = 'start2';
-            updateGalleryClickModeButtons();
-        };
-    }
-    if (galleryClickEndBtn2) {
-        galleryClickEndBtn2.onclick = () => {
-            state.galleryClickMode = 'end2';
-            updateGalleryClickModeButtons();
-        };
-    }
+
 
     const setAutofixStartBtn = document.getElementById('setAutofixStartBtn');
     const setAutofixEndBtn = document.getElementById('setAutofixEndBtn');

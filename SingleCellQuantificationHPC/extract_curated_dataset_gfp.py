@@ -27,8 +27,11 @@ def main():
         global_cells = linkage[seq]["global_cells"]
         
         for key, status in qc.items():
-            if status.lower() not in ["good", "corrected"]:
+            from tracking_corrector.qc_schema import USABLE_GLOBAL_STATUSES
+            st_val = status.get("status") if isinstance(status, dict) else str(status)
+            if st_val.lower() not in USABLE_GLOBAL_STATUSES:
                 continue
+
                 
             # Check if global or local
             # Format: {seq}_cell_{id} OR {seq}_{film}_cell_{id}

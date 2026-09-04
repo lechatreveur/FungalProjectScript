@@ -36,6 +36,8 @@ class LinkageService:
             for item in sorted(exp_dir.iterdir()):
                 if item.is_dir() and not item.name.startswith(".") and not item.name.startswith("_"):
                     film_name = item.name
+                    if "snap" in film_name.lower() or re.search(r'N1_\d+_F', film_name):
+                        continue
                     # Check if film folder has TrackedCells or Frames
                     tracked = item / f"TrackedCells_{film_name}"
                     frames = item / f"Frames_{film_name}"

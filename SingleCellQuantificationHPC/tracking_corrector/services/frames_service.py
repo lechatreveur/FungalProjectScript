@@ -1,3 +1,4 @@
+import logging
 import re
 import io
 import cv2
@@ -13,6 +14,18 @@ from ..errors import NotFoundError
 from ..security import resolve_under_root
 from ..repositories.mask_repository import MaskRepository
 from ..schemas import validate_and_decode_rle
+
+logger = logging.getLogger(__name__)
+
+def create_error_crop_np(crop_size: int = 100) -> np.ndarray:
+    """Create a high-contrast placeholder (bright red/magenta pattern) for missing or failed frame decodes."""
+    arr = np.zeros((crop_size, crop_size, 3), dtype=np.uint8)
+    arr[:, :, 0] = 220  # Bright Red
+    arr[:, :, 2] = 220  # Magenta tint
+    # Draw cross lines for visual clarity
+    arr[crop_size//2 - 1:crop_size//2 + 1, :, :] = 255
+    arr[:, crop_size//2 - 1:crop_size//2 + 1, :] = 255
+    return arr
 
 def find_time_from_name(filename: str) -> Optional[int]:
     m = re.search(r"_t_(\d+)_", filename)
@@ -60,9 +73,14 @@ class FramesService:
         cache = {}
         target_c = 1 if channel.lower() == "gfp" else 0
 
+        VALID_EXTS = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
         if frames_dir.exists():
             for f in frames_dir.iterdir():
                 if f.name.startswith(".") or not f.is_file():
+                    continue
+                if f.suffix.lower() not in VALID_EXTS:
+                    continue
+                if "_seg" in f.stem:
                     continue
                 t_val = find_time_from_name(f.name)
                 m_c = re.search(r"_c_(\d+)\.", f.name)
@@ -208,8 +226,9 @@ class FramesService:
                     cx, cy = int(np.mean(xs)), int(np.mean(ys))
                     text = str(cid)
                     font = cv2.FONT_HERSHEY_SIMPLEX
-                    cv2.putText(img_bgr, text, (cx, cy), font, 0.7, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(img_bgr, text, (cx, cy), font, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
+                    # Scaled by 1.5x (0.7 -> 1.05) with proportional outline thickness
+                    cv2.putText(img_bgr, text, (cx, cy), font, 1.05, (0, 0, 0), 4, cv2.LINE_AA)
+                    cv2.putText(img_bgr, text, (cx, cy), font, 1.05, (255, 255, 255), 2, cv2.LINE_AA)
 
                 ci = septum_intervals.get(str(cid), {})
                 if ci.get("has_septum"):
@@ -242,6 +261,13 @@ class FramesService:
                 continue
 
         blended = cv2.addWeighted(overlay, alpha, img_bgr, 1.0, 0.0)
+
+        # Downscale population frame to 1000x1000 per rule
+        target_w, target_h = 1000, 1000
+        if W != target_w or H != target_h:
+            interp = cv2.INTER_AREA if (W >= target_w and H >= target_h) else cv2.INTER_LINEAR
+            blended = cv2.resize(blended, (target_w, target_h), interpolation=interp)
+
         is_success, buffer = cv2.imencode(".jpg", blended, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         jpeg_bytes = buffer.tobytes()
 
@@ -286,15 +312,25 @@ class FramesService:
         cache_file = cache_dir / f"cell_{cell_id}_t_{t_val:03d}_{channel}.jpg"
         if cache_file.exists():
             try:
-                return cache_file.read_bytes()
-            except Exception:
-                pass
+                data = cache_file.read_bytes()
+                if len(data) > 0:
+                    im = Image.open(io.BytesIO(data))
+                    arr = np.array(im)
+                    if arr.size > 0 and arr.max() > 0:
+                        return data
+                    else:
+                        logger.warning(f"⚠️ Purging stale all-black cache file: {cache_file}")
+                        cache_file.unlink(missing_ok=True)
+            except Exception as e:
+                logger.warning(f"⚠️ Removing corrupted cache file '{cache_file}': {e}")
+                cache_file.unlink(missing_ok=True)
 
         try:
             file_path = self.get_frame_path(exp, film, t_val, channel)
             img = imread(str(file_path))
-        except Exception:
-            img = np.zeros((crop_size, crop_size), dtype=np.uint8)
+        except Exception as e:
+            logger.error(f"❌ Failed to decode frame image '{exp}/{film}/t_{t_val:03d}_{channel}' (path: {file_path}): {e}", exc_info=True)
+            img = create_error_crop_np(crop_size)
 
         H, W = img.shape[:2]
         cy, cx = H // 2, W // 2

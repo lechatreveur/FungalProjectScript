@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Mobile Septum Review</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --accent: #06b6d4;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --border: #334155;
+            --warning: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Header */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background-color: rgba(30, 41, 59, 0.9);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            z-index: 10;
+        }
+
+        .header-title-box {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .badge {
+            background-color: rgba(6, 182, 212, 0.15);
+            color: var(--accent);
+            padding: 4px 10px;
+            border-radius: 14px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--success);
+            display: inline-block;
+        }
+
+        .count-badge {
+            font-size: 0.8rem;
+            color: #38bdf8;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+
+        .btn-icon:active {
+            opacity: 0.7;
+        }
+
+        /* Select target */
+        select.target-select {
+            background-color: #0f172a;
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 0.85rem;
+        }
+
+        /* Main Card Container */
+        .card-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            position: relative;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 380px;
+            height: 100%;
+            max-height: calc(100dvh - 180px);
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            transition: transform 0.15s ease-out;
+            will-change: transform;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        .cell-info {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .prob-info {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .image-viewport {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background-color: #020617;
+            overflow: hidden;
+        }
+
+        .crop-canvas-wrapper {
+            position: relative;
+            width: 260px;
+            height: 260px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .crop-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            image-rendering: pixelated;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .draw-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            touch-action: none;
+            z-index: 5;
+        }
+
+        /* Swipe / Action Badges on Card */
+        .card-badge-overlay {
+            position: absolute;
+            top: 20px;
+            padding: 6px 14px;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.1s;
+            z-index: 8;
+        }
+
+        .badge-no-septum {
+            left: 20px;
+            background-color: var(--danger);
+            color: white;
+            border: 2px solid #fca5a5;
+        }
+
+        .badge-has-septum {
+            right: 20px;
+            background-color: var(--success);
+            color: white;
+            border: 2px solid #86efac;
+        }
+
+        /* Warning Text Banner */
+        .warning-box {
+            padding: 8px 12px;
+            background-color: rgba(245, 158, 11, 0.1);
+            border-top: 1px solid rgba(245, 158, 11, 0.2);
+            font-size: 0.73rem;
+            color: #fbbf24;
+            line-height: 1.25;
+            text-align: center;
+        }
+
+        .mode-banner {
+            padding: 6px 10px;
+            background-color: rgba(6, 182, 212, 0.15);
+            border-bottom: 1px solid rgba(6, 182, 212, 0.3);
+            font-size: 0.78rem;
+            color: var(--accent);
+            text-align: center;
+            font-weight: 600;
+        }
+
+        /* Control Buttons */
+        .controls-bar {
+            padding: 12px 16px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--bg-color);
+        }
+
+        .btn-action {
+            flex: 1;
+            padding: 12px 10px;
+            border-radius: 14px;
+            border: none;
+            font-weight: 700;
+            font-size: 0.88rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: transform 0.1s, opacity 0.1s;
+        }
+
+        .btn-action:active {
+            transform: scale(0.96);
+        }
+
+        .btn-left {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .btn-redo {
+            background-color: rgba(245, 158, 11, 0.2);
+            color: #fde68a;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            max-width: 100px;
+        }
+
+        .btn-right {
+            background-color: rgba(34, 197, 94, 0.2);
+            color: #86efac;
+            border: 1px solid rgba(34, 197, 94, 0.4);
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            padding: 24px;
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        .btn-fetch {
+            margin-top: 16px;
+            padding: 10px 20px;
+            background-color: var(--accent);
+            color: #020617;
+            font-weight: 700;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-title-box">
+            <div class="header-title">
+                <span>Septum Mobile</span>
+                <span class="badge" id="onlineBadge">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="onlineText">Online</span>
+                </span>
+            </div>
+            <div class="count-badge" id="toolCounter">Mobile Labels Saved: 0</div>
+            <div class="count-badge" id="alCoverageText" style="color: #38bdf8; font-weight: 700;">0 / 50 labels toward next retrain (Round 1)</div>
+        </div>
+        <div class="header-actions">
+            <select class="target-select" id="filmSelect">
+                <option value="3_BF2_F0">3_BF2_F0</option>
+                <option value="3_F0">3_F0</option>
+            </select>
+            <button class="btn-icon" id="btnSync" title="Sync Pending Queue">⚡</button>
+        </div>
+    </header>
+
+    <div class="training-banner" id="trainingBanner" style="display: none; background: rgba(245, 158, 11, 0.2); border-bottom: 1px solid rgba(245, 158, 11, 0.4); color: #fde68a; padding: 6px; text-align: center; font-size: 0.8rem; font-weight: 700;">
+        🔄 Retraining in progress (Round 1)...
+    </div>
+
+    <div class="card-container">
+
+        <!-- Review Card -->
+        <div class="card" id="reviewCard">
+            <div class="card-badge-overlay badge-no-septum" id="badgeLeft">NO SEPTUM</div>
+            <div class="card-badge-overlay badge-has-septum" id="badgeRight">SEPTUM DRAWN</div>
+
+            <div class="card-header">
+                <div class="cell-info" id="cellInfo">Cell -- t=--</div>
+                <div class="prob-info" id="probInfo">P(septum): --</div>
+            </div>
+
+            <div class="mode-banner" id="modeBanner">
+                ← Swipe Left: No Septum | Swipe Right or Draw →
+            </div>
+
+            <div class="image-viewport">
+                <div class="crop-canvas-wrapper">
+                    <img id="cropImg" class="crop-img" src="" alt="Rotated Crop">
+                    <canvas id="drawCanvas" class="draw-canvas" width="260" height="260"></canvas>
+                </div>
+            </div>
+
+            <div class="warning-box" id="warningBox">
+                Suggestion only: held-out endpoint F1 is 0.240. Verify before saving.
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState">
+            <div class="empty-icon">🎉</div>
+            <h3 style="margin: 0; color: var(--text-main);">Queue Empty</h3>
+            <p style="margin: 8px 0; color: var(--text-sub); font-size: 0.85rem;" id="emptySubtitle">
+                All available septum review crops have been completed.
+            </p>
+            <button class="btn-fetch" id="btnFetch">Fetch More Crops</button>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-bar" id="controlButtons">
+        <button class="btn-action btn-left" id="btnSwipeLeft">✖ No Septum</button>
+        <button class="btn-action btn-redo" id="btnRedo" title="Clear current stroke">↺ Redo</button>
+        <button class="btn-action btn-right" id="btnSwipeRight">✎ Draw Septum</button>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        let EXP = urlParams.get('experiment') || '2026_07_16_M156';
+        let FILM = urlParams.get('film') || urlParams.get('target') || '3_BF2_F0';
+
+        const filmSelect = document.getElementById('filmSelect');
+        if (filmSelect) {
+            filmSelect.value = FILM;
+            filmSelect.onchange = () => {
+                FILM = filmSelect.value;
+                const newUrl = new URL(window.location);
+                newUrl.searchParams.set('film', FILM);
+                history.replaceState(null, '', newUrl);
+                loadStateForFilm();
+                updateUI();
+                fetchBatch(30);
+            };
+        }
+
+        let cachedItems = [];
+        let pendingResults = [];
+        let mobileLabelsSavedCount = 0;
+        let isDrawingMode = false;
+        let currentStroke = [];
+
+        const cacheKey = () => `mobile_septum_cached_${EXP}_${FILM}`;
+        const pendingKey = () => `mobile_septum_pending_${EXP}_${FILM}`;
+
+        function isQuotaError(e) {
+            return (
+                e instanceof DOMException &&
+                (e.code === 22 ||
+                 e.code === 1014 ||
+                 e.name === 'QuotaExceededError' ||
+                 e.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+            );
+        }
+
+        function loadStateForFilm() {
+            try {
+                const sCache = localStorage.getItem(cacheKey());
+                cachedItems = sCache ? JSON.parse(sCache) : [];
+
+                const sPending = localStorage.getItem(pendingKey());
+                pendingResults = sPending ? JSON.parse(sPending) : [];
+            } catch (e) {
+                console.warn("Storage load warning:", e);
+                cachedItems = [];
+                pendingResults = [];
+            }
+        }
+
+        function saveState() {
+            try {
+                localStorage.setItem(cacheKey(), JSON.stringify(cachedItems));
+                localStorage.setItem(pendingKey(), JSON.stringify(pendingResults));
+            } catch (e) {
+                console.warn("Storage write error:", e);
+                if (isQuotaError(e)) {
+                    // Evict old cache items if storage full
+                    cachedItems = cachedItems.slice(0, 5);
+                    try {
+                        localStorage.setItem(cacheKey(), JSON.stringify(cachedItems));
+                    } catch (e2) {}
+                }
+            }
+        }
+
+        loadStateForFilm();
+
+        // UI elements
+        const reviewCard = document.getElementById('reviewCard');
+        const emptyState = document.getElementById('emptyState');
+        const controlButtons = document.getElementById('controlButtons');
+        const cellInfoEl = document.getElementById('cellInfo');
+        const probInfoEl = document.getElementById('probInfo');
+        const cropImgEl = document.getElementById('cropImg');
+        const drawCanvas = document.getElementById('drawCanvas');
+        const ctx = drawCanvas.getContext('2d');
+        const modeBannerEl = document.getElementById('modeBanner');
+        const warningBoxEl = document.getElementById('warningBox');
+        const toolCounterEl = document.getElementById('toolCounter');
+
+        const badgeLeft = document.getElementById('badgeLeft');
+        const badgeRight = document.getElementById('badgeRight');
+
+        function updateUI() {
+            toolCounterEl.innerText = `Mobile Labels Saved: ${mobileLabelsSavedCount}`;
+
+            if (cachedItems.length > 0) {
+                const current = cachedItems[0];
+                cellInfoEl.innerText = `Cell ${current.cell_id} • t=${current.frame}`;
+                probInfoEl.innerText = current.state_prob !== null ? `P(septum): ${current.state_prob}` : 'P(septum): N/A';
+                
+                cropImgEl.src = `data:image/jpeg;base64,${current.image_b64}`;
+                
+                if (current.warning) {
+                    warningBoxEl.innerText = current.warning;
+                } else {
+                    warningBoxEl.innerText = "Suggestion only: held-out endpoint F1 is 0.240. Verify before saving.";
+                }
+
+                reviewCard.style.display = 'flex';
+                controlButtons.style.display = 'flex';
+                emptyState.style.display = 'none';
+
+                clearCanvas();
+                drawAIOverlay(current);
+            } else {
+                reviewCard.style.display = 'none';
+                controlButtons.style.display = 'none';
+                emptyState.style.display = 'flex';
+            }
+        }
+
+        function drawAIOverlay(item) {
+            if (!item || !item.overlay || !item.overlay.septum_center_in_crop) return;
+            const pt = item.overlay.septum_center_in_crop; // [row, col]
+            if (pt && pt.length === 2 && pt[0] !== null && pt[1] !== null) {
+                const cropSize = item.crop_size || 160;
+                const canvasW = drawCanvas.width;
+                const canvasH = drawCanvas.height;
+                const scaleX = canvasW / cropSize;
+                const scaleY = canvasH / cropSize;
+
+                const cx = pt[1] * scaleX;
+                const cy = pt[0] * scaleY;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
+                ctx.strokeStyle = '#06b6d4';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(6, 182, 212, 0.4)';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            currentStroke = [];
+        }
+
+        // Fetch batch
+        async function fetchBatch(count = 20) {
+            const emptySubtitle = document.getElementById('emptySubtitle');
+            if (emptySubtitle) emptySubtitle.innerText = "Fetching rotated crops...";
+
+            try {
+                const resp = await fetch(`/api/septum_review/batch?experiment=${EXP}&film=${FILM}&count=${count}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.mobile_labels_saved_count !== undefined) {
+                        mobileLabelsSavedCount = data.mobile_labels_saved_count;
+                    }
+                    if (data.items && data.items.length > 0) {
+                        const existingKeys = new Set(cachedItems.map(it => `${it.cell_id}_${it.frame}`));
+                        let added = 0;
+                        for (const it of data.items) {
+                            const k = `${it.cell_id}_${it.frame}`;
+                            if (!existingKeys.has(k)) {
+                                cachedItems.push(it);
+                                added++;
+                            }
+                        }
+                        saveState();
+                    }
+                }
+            } catch (e) {
+                console.error("Fetch batch error:", e);
+            }
+            updateUI();
+            fetchStats();
+            syncPending();
+        }
+
+        async function fetchStats() {
+            try {
+                const resp = await fetch(`/api/septum_review/stats?experiment=${EXP}&film=${FILM}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.mobile_labels_saved_count !== undefined) {
+                        mobileLabelsSavedCount = data.mobile_labels_saved_count;
+                        toolCounterEl.innerText = `Mobile Labels Saved: ${mobileLabelsSavedCount}`;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // Redo Button - clears current stroke without saving or advancing
+        document.getElementById('btnRedo').addEventListener('click', () => {
+            clearCanvas();
+            if (cachedItems.length > 0) {
+                drawAIOverlay(cachedItems[0]);
+            }
+        });
+
+        // Swipe & Touch Handling
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let cardX = 0;
+        let isSwiping = false;
+
+        reviewCard.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            isSwiping = false;
+        }, { passive: true });
+
+        reviewCard.addEventListener('touchmove', (e) => {
+            if (isDrawingMode) return; // If in explicit drawing mode, pass to canvas
+            const dx = e.touches[0].clientX - touchStartX;
+            const dy = e.touches[0].clientY - touchStartY;
+
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+                isSwiping = true;
+                cardX = dx;
+                reviewCard.style.transform = `translateX(${cardX}px) rotate(${cardX * 0.05}deg)`;
+
+                if (cardX < -40) {
+                    badgeLeft.style.opacity = Math.min(1, Math.abs(cardX) / 100);
+                    badgeRight.style.opacity = 0;
+                } else if (cardX > 40) {
+                    badgeRight.style.opacity = Math.min(1, Math.abs(cardX) / 100);
+                    badgeLeft.style.opacity = 0;
+                } else {
+                    badgeLeft.style.opacity = 0;
+                    badgeRight.style.opacity = 0;
+                }
+            }
+        }, { passive: true });
+
+        reviewCard.addEventListener('touchend', () => {
+            if (!isSwiping) return;
+            badgeLeft.style.opacity = 0;
+            badgeRight.style.opacity = 0;
+
+            if (cardX < -80) {
+                // Swipe Left -> No Septum
+                commitResult(false, null);
+            } else if (cardX > 80) {
+                // Swipe Right -> Enter drawing prompt or commit if stroke present
+                if (currentStroke.length > 0) {
+                    commitStrokeResult();
+                } else {
+                    // Reset card position and prompt drawing
+                    reviewCard.style.transform = 'none';
+                    modeBannerEl.innerText = "✎ Draw stroke on cell, then release!";
+                    modeBannerEl.style.color = '#86efac';
+                }
+            } else {
+                reviewCard.style.transform = 'none';
+            }
+            cardX = 0;
+            isSwiping = false;
+        });
+
+        // Canvas Drawing Interaction for Freehand Stroke (Swipe Right / Drawing Mode)
+        let isDrawingOnCanvas = false;
+
+        function getCanvasCoords(e) {
+            const rect = drawCanvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: (clientX - rect.left) * (drawCanvas.width / rect.width),
+                y: (clientY - rect.top) * (drawCanvas.height / rect.height)
+            };
+        }
+
+        drawCanvas.addEventListener('mousedown', startStroke);
+        drawCanvas.addEventListener('mousemove', moveStroke);
+        drawCanvas.addEventListener('mouseup', endStroke);
+
+        drawCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startStroke(e);
+        }, { passive: false });
+
+        drawCanvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            moveStroke(e);
+        }, { passive: false });
+
+        drawCanvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            endStroke(e);
+        }, { passive: false });
+
+        function startStroke(e) {
+            isDrawingOnCanvas = true;
+            const pt = getCanvasCoords(e);
+            currentStroke = [pt];
+            ctx.beginPath();
+            ctx.moveTo(pt.x, pt.y);
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+        }
+
+        function moveStroke(e) {
+            if (!isDrawingOnCanvas) return;
+            const pt = getCanvasCoords(e);
+            currentStroke.push(pt);
+            ctx.lineTo(pt.x, pt.y);
+            ctx.stroke();
+        }
+
+        function endStroke() {
+            if (!isDrawingOnCanvas) return;
+            isDrawingOnCanvas = false;
+
+            if (currentStroke.length > 0) {
+                // Auto-commit positive stroke after completion
+                setTimeout(() => {
+                    commitStrokeResult();
+                }, 150);
+            }
+        }
+
+        function commitStrokeResult() {
+            if (currentStroke.length === 0) return;
+            // Calculate centroid of stroke in crop coordinates [0 .. crop_size]
+            const currentItem = cachedItems[0];
+            const cropSize = currentItem ? (currentItem.crop_size || 160) : 160;
+            const scaleX = cropSize / drawCanvas.width;
+            const scaleY = cropSize / drawCanvas.height;
+
+            let sumY = 0, sumX = 0;
+            for (const pt of currentStroke) {
+                sumY += pt.y * scaleY;
+                sumX += pt.x * scaleX;
+            }
+            const strokeCenterInCrop = [
+                sumY / currentStroke.length,
+                sumX / currentStroke.length
+            ];
+
+            commitResult(true, strokeCenterInCrop);
+        }
+
+        // Commit decision and advance to next card
+        function commitResult(hasSeptum, strokeCenterInCrop) {
+            if (cachedItems.length === 0) return;
+
+            const item = cachedItems.shift(); // Remove top item
+            saveState();
+
+            // Animate card dismissal
+            reviewCard.style.transform = hasSeptum ? 'translateX(400px)' : 'translateX(-400px)';
+
+            const payload = {
+                experiment: EXP,
+                film: FILM,
+                cell_id: item.cell_id,
+                frame: item.frame,
+                has_septum: hasSeptum,
+                stroke_center_in_crop: strokeCenterInCrop,
+                crop_size: item.crop_size || 160,
+                label_source: "mobile_septum_review"
+            };
+
+            pendingResults.push(payload);
+            saveState();
+
+            mobileLabelsSavedCount++;
+            toolCounterEl.innerText = `Mobile Labels Saved: ${mobileLabelsSavedCount}`;
+
+            setTimeout(() => {
+                reviewCard.style.transform = 'none';
+                modeBannerEl.innerText = "← Swipe Left: No Septum | Swipe Right or Draw →";
+                modeBannerEl.style.color = "var(--accent)";
+                updateUI();
+                if (cachedItems.length < 5) {
+                    fetchBatch(20);
+                } else {
+                    syncPending();
+                }
+            }, 180);
+        }
+
+        // Buttons
+        document.getElementById('btnSwipeLeft').addEventListener('click', () => {
+            commitResult(false, null);
+        });
+
+        document.getElementById('btnSwipeRight').addEventListener('click', () => {
+            if (currentStroke.length > 0) {
+                commitStrokeResult();
+            } else {
+                modeBannerEl.innerText = "✎ Draw stroke on cell, then release!";
+                modeBannerEl.style.color = '#86efac';
+            }
+        });
+
+        document.getElementById('btnSync').addEventListener('click', () => {
+            syncPending();
+        });
+
+        document.getElementById('btnFetch').addEventListener('click', () => {
+            fetchBatch(30);
+        });
+
+        // Sync pending queue to server
+        async function syncPending() {
+            if (pendingResults.length === 0) return;
+
+            const statusDot = document.getElementById('statusDot');
+            const onlineText = document.getElementById('onlineText');
+            if (statusDot) statusDot.style.backgroundColor = 'var(--warning)';
+            if (onlineText) onlineText.innerText = 'Syncing...';
+
+            const toSync = [...pendingResults];
+            let syncedCount = 0;
+
+            for (const payload of toSync) {
+                try {
+                    const resp = await fetch('/api/septum_review/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.mobile_labels_saved_count !== undefined) {
+                            mobileLabelsSavedCount = data.mobile_labels_saved_count;
+                        }
+                        // Remove synced item from pending queue
+                        pendingResults = pendingResults.filter(p => !(p.cell_id === payload.cell_id && p.frame === payload.frame));
+                        syncedCount++;
+                        saveState();
+                    }
+                } catch (e) {
+                    console.error("Sync item error:", e);
+                    break;
+                }
+            }
+
+            if (statusDot) statusDot.style.backgroundColor = 'var(--success)';
+            if (onlineText) onlineText.innerText = 'Online';
+            toolCounterEl.innerText = `Mobile Labels Saved: ${mobileLabelsSavedCount}`;
+        }
+
+        async function fetchALStatus() {
+            try {
+                const resp = await fetch('/api/septum_review/al_status');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const state = data.al_state || {};
+                    const count = state.mobile_labels_saved_count || 0;
+                    const target = state.target_new_labels || 50;
+                    const roundNum = state.current_round || 1;
+                    const inProgress = state.training_in_progress || false;
+
+                    const alText = document.getElementById('alCoverageText');
+                    if (alText) {
+                        alText.innerText = `${count} / ${target} labels toward next retrain (Round ${roundNum})`;
+                    }
+
+                    const trBanner = document.getElementById('trainingBanner');
+                    if (trBanner) {
+                        if (inProgress) {
+                            trBanner.style.display = 'block';
+                            trBanner.innerText = `🔄 Retraining active (Round ${roundNum})...`;
+                        } else {
+                            trBanner.style.display = 'none';
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // Periodic sync and AL status check
+        setInterval(syncPending, 20000);
+        setInterval(fetchALStatus, 5000);
+
+        // Initial fetch
+        fetchStats();
+        fetchALStatus();
+        if (cachedItems.length === 0) {
+            fetchBatch(30);
+        } else {
+            updateUI();
+        }
+    </script>
+
+</body>
+</html>

@@ -76,3 +76,10 @@ so the two stay consistent.
 - `skimage` `regionprops.orientation` is measured from the row (vertical) axis;
   crop rotation in the strip generators must use `-(angle_deg - 90)`, not
   `-angle_deg` — see `DEVELOPMENT_NOTES.md` and the M156 strip fix.
+- **RLE Mask Encoding is Fortran (Column-Major) Order**: All run-length encoded
+  masks (`rle_gfp`, `rle_bf`) stored in `cell_*_masks.csv` use 1-indexed Fortran order
+  (`flat = mask.flatten(order='F')`, `flat.reshape((H, W), order='F')`). Flat index
+  $i$ maps to $(x = i // H, y = i \% H)$. Never assume C-order (row-major) indexing,
+  and always use `validate_and_decode_rle` / `encode_mask_to_rle` from
+  `SingleCellQuantificationHPC/ground_truth_corrector/schemas.py`.
+

@@ -17,7 +17,7 @@ const state = {
     numFrames: 0,
     currentFrame: 0,
     channel: 'bf',
-    viewMode: 'single',
+    viewMode: 'population',
     tool: 'select',
     brushSize: 10,
     isPlaying: false,
@@ -41,7 +41,6 @@ const state = {
     filmBoundaries: [],
     
     // Septum specific
-    galleryClickMode: 'nav',
     lastActiveFilm: null,
     lastActiveCellId: null,
     septumOffset: 0
@@ -90,17 +89,26 @@ function resetView() {
     if (!canvasContainer) return;
     const availableWidth = canvasContainer.clientWidth;
     const availableHeight = canvasContainer.clientHeight;
-    if (availableWidth <= 0 || availableHeight <= 0 || state.imgWidth <= 0 || state.imgHeight <= 0) {
+    if (availableWidth <= 0 || availableHeight <= 0) {
         return;
     }
+    const iw = state.viewMode === 'population' ? 1000 : (state.imgWidth || 2000);
+    const ih = state.viewMode === 'population' ? 1000 : (state.imgHeight || 2000);
     state.scale = Math.min(
-        availableWidth / state.imgWidth,
-        availableHeight / state.imgHeight
-    ) * 0.95;
-    state.panX = (canvasContainer.clientWidth - state.imgWidth * state.scale) / 2;
-    state.panY = (canvasContainer.clientHeight - state.imgHeight * state.scale) / 2;
+        availableWidth / iw,
+        availableHeight / ih
+    ) * 0.96;
+    state.panX = (canvasContainer.clientWidth - iw * state.scale) / 2;
+    state.panY = (canvasContainer.clientHeight - ih * state.scale) / 2;
+    if (canvas) {
+        canvas.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.scale})`;
+    }
     updateTransformLabels();
 }
+
+window.addEventListener('resize', () => {
+    resetView();
+});
 
 function getActiveFilmAndLocalCell() {
     if (state.isLocalEdit) {

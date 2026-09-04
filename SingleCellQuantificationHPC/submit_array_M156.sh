@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SEG_BACKEND="${1:-legacy}"
 BASE_EXP_ROOT="/home/hsushen/FungalProjectScript/SingleCellQuantificationHPC"
 MOVIE_ROOT="/RAID1/working/R402/hsushen/FungalProject/Movies/2026_07_16_M156"
-EXP_ROOT="${BASE_EXP_ROOT}/2026_07_16_M156"
+if [[ "$SEG_BACKEND" == "cellpose_overexposed" ]]; then
+    EXP_ROOT="${BASE_EXP_ROOT}/2026_07_16_M156_cpsam_overexp"
+else
+    EXP_ROOT="${BASE_EXP_ROOT}/2026_07_16_M156"
+fi
 JOB_ID_FILE="${EXP_ROOT}/slurm_job_ids.tsv"
 DONE_MARKER="${EXP_ROOT}/SUBMISSION_COMPLETE"
 
@@ -94,6 +99,7 @@ for file_name in "${MOVIES[@]}"; do
         -z 0 \
         -a 2000 \
         --direction forward \
+        --seg-backend "$SEG_BACKEND" \
         --job-name-prefix "M156_" \
         --job-id-file "$JOB_ID_FILE" \
         --submit slurm

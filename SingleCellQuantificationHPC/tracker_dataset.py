@@ -74,11 +74,13 @@ def discover_corrected_films(movie_root: str) -> List[Dict]:
             qc = pd.read_csv(qc_path)
         except Exception:
             continue
+        from tracking_corrector.qc_schema import GlobalCellQC
         corrected = set(
             int(r["cell_id"])
             for _, r in qc.iterrows()
-            if str(r.get("status", "")).lower() == "corrected"
+            if str(r.get("status", "")).lower() == GlobalCellQC.CORRECTED.value
         )
+
         if not corrected:
             continue
 

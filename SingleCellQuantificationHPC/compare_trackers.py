@@ -57,7 +57,9 @@ def discover_gt_m93():
         films = linkage[seq]["films"]
         global_cells = linkage[seq]["global_cells"]
         for key, status in qc.items():
-            if status.lower() not in ["good", "corrected"]:
+            from tracking_corrector.qc_schema import USABLE_GLOBAL_STATUSES
+            st_val = status.get("status") if isinstance(status, dict) else str(status)
+            if st_val.lower() not in USABLE_GLOBAL_STATUSES:
                 continue
             prefix = f"{seq}_"
             suffix = key[len(prefix):]
@@ -92,7 +94,8 @@ def discover_gt_m93():
             continue
         qc_data = check_qc_csv(tracked_dir)
         for cell_id, status in qc_data.items():
-            if status in ["good", "corrected"]:
+            from tracking_corrector.qc_schema import USABLE_GLOBAL_STATUSES
+            if status.lower() in USABLE_GLOBAL_STATUSES:
                 results.append({
                     "experiment": "2026_01_08_M93",
                     "film": film_dir.name,
@@ -118,7 +121,9 @@ def discover_gt_2025_09_17():
         films = linkage[seq]["films"]
         global_cells = linkage[seq]["global_cells"]
         for key, status in qc.items():
-            if status.lower() not in ["good", "corrected"]:
+            from tracking_corrector.qc_schema import USABLE_GLOBAL_STATUSES
+            st_val = status.get("status") if isinstance(status, dict) else str(status)
+            if st_val.lower() not in USABLE_GLOBAL_STATUSES:
                 continue
             prefix = f"{seq}_"
             suffix = key[len(prefix):]
@@ -153,7 +158,8 @@ def discover_gt_2025_09_17():
             continue
         qc_data = check_qc_csv(tracked_dir)
         for cell_id, status in qc_data.items():
-            if status in ["good", "corrected"]:
+            from tracking_corrector.qc_schema import USABLE_GLOBAL_STATUSES
+            if status.lower() in USABLE_GLOBAL_STATUSES:
                 results.append({
                     "experiment": "2025_09_17",
                     "film": film_dir.name,

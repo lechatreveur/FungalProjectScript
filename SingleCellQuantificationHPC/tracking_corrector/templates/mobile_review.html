@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Mistrack Mobile Review</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --accent: #38bdf8;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --border: #334155;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Header */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background-color: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            z-index: 10;
+        }
+
+        .badge {
+            background-color: rgba(56, 189, 248, 0.15);
+            color: var(--accent);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--success);
+        }
+
+        .btn-icon {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+
+        .btn-icon:active {
+            opacity: 0.7;
+        }
+
+        /* Main Card Container */
+        .card-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            position: relative;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 400px;
+            height: 100%;
+            max-height: calc(100dvh - 220px);
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            transition: transform 0.1s ease-out;
+            will-change: transform;
+        }
+
+        .card-header {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .cell-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .window-tag {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: var(--accent);
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 8px;
+        }
+
+        .card-body {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .strip-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 12px;
+        }
+
+        /* Swipe Badge Overlays */
+        .overlay-badge {
+            position: absolute;
+            top: 24px;
+            font-size: 1.4rem;
+            font-weight: 800;
+            padding: 8px 16px;
+            border-radius: 12px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+
+        .overlay-badge.left {
+            right: 20px;
+            background-color: var(--danger);
+            color: white;
+            transform: rotate(12deg);
+        }
+
+        .overlay-badge.right {
+            left: 20px;
+            background-color: var(--success);
+            color: white;
+            transform: rotate(-12deg);
+        }
+
+        /* Action Controls */
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 24px;
+            padding: 12px 16px;
+            padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+            z-index: 20;
+            position: relative;
+        }
+
+        .btn-action {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-action:active {
+            transform: scale(0.92);
+        }
+
+        .btn-mistrack {
+            background-color: var(--danger);
+        }
+
+        .btn-undo {
+            background-color: #f59e0b;
+            width: 52px;
+            height: 52px;
+            font-size: 1.3rem;
+        }
+
+        .btn-ok {
+            background-color: var(--success);
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 32px;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+
+        .btn-fetch {
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 14px;
+            font-weight: 700;
+            font-size: 1rem;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="btn-icon" title="Desktop Corrector Board" style="text-decoration: none;">💻</a>
+        <div class="badge">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="queueCounter">0 cached • 0 pending</span>
+        </div>
+        <button class="btn-icon" id="btnRefresh" title="Refresh Queue">🔄</button>
+    </header>
+
+    <div style="padding: 8px 16px; background-color: rgba(30, 41, 59, 0.5); display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border);">
+        <div style="display: flex; align-items: center; gap: 4px;">
+            <label for="targetSelect" style="font-size: 0.8rem; color: var(--text-sub); font-weight: 600;">Field:</label>
+            <select id="targetSelect" style="background-color: #0f172a; color: var(--text-main); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; font-size: 0.8rem;">
+                <option value="3_F0">3_F0</option>
+                <option value="3_F1">3_F1</option>
+                <option value="3_F2">3_F2</option>
+                <option value="3_BF1_F0">3_BF1_F0</option>
+                <option value="3_BF2_F0">3_BF2_F0</option>
+            </select>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 4px;">
+            <label for="qcFilterSelect" style="font-size: 0.8rem; color: var(--text-sub); font-weight: 600;">QC:</label>
+            <select id="qcFilterSelect" style="background-color: #0f172a; color: var(--text-main); border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; font-size: 0.8rem;">
+                <option value="exclude_bad">Exclude Bad</option>
+                <option value="all">All Active</option>
+                <option value="exclude_bad_review">Excl Bad/Rev</option>
+                <option value="good_only">Good Only</option>
+                <option value="unlabeled_only">Unlabeled</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Coverage Progress Bar Container -->
+    <div id="coverageContainer" style="padding: 6px 16px; background-color: rgba(15, 23, 42, 0.9); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
+            <span style="color: var(--text-sub); font-weight: 600;" id="coverageLabel">Loading coverage...</span>
+            <span style="color: var(--accent); font-weight: 600; font-size: 0.75rem;" id="overallCoverageLabel">Overall: 44.4%</span>
+        </div>
+        <div style="width: 100%; height: 6px; background-color: var(--border); border-radius: 3px; overflow: hidden; display: flex;">
+            <div id="progressMistracked" style="width: 0%; height: 100%; background-color: var(--danger); transition: width 0.3s ease;" title="Mistracked cells"></div>
+            <div id="progressExhausted" style="width: 0%; height: 100%; background-color: var(--success); transition: width 0.3s ease;" title="Exhausted clean cells"></div>
+        </div>
+    </div>
+
+    <div class="card-container">
+        <div class="card" id="reviewCard" style="display: none;">
+            <div class="overlay-badge left" id="badgeLeft">MISTRACKED</div>
+            <div class="overlay-badge right" id="badgeRight">KEEP (OK)</div>
+
+            <div class="card-header">
+                <div>
+                    <div style="font-size: 0.75rem; color: var(--text-sub); font-weight: 600;">CELL ID</div>
+                    <div class="cell-title" id="cellId">M156_0</div>
+                </div>
+                <div class="window-tag" id="windowTag">Window 1 of 7</div>
+            </div>
+
+            <div class="card-body">
+                <img id="stripImg" class="strip-img" src="" alt="Cell strip window">
+            </div>
+        </div>
+
+        <div class="empty-state" id="emptyState">
+            <div class="empty-icon">🎉</div>
+            <h2 style="margin: 0 0 8px 0;">All Caught Up!</h2>
+            <p id="emptySubtitle" style="color: var(--text-sub); margin: 0 0 12px 0;">No cached review windows in queue.</p>
+            <button class="btn-fetch" id="btnFetch">Fetch 50 Review Windows</button>
+            <button id="btnClearCache" style="background: none; border: none; color: var(--text-sub); font-size: 0.8rem; margin-top: 14px; text-decoration: underline; cursor: pointer;">Reset Phone Cache & Refetch</button>
+        </div>
+    </div>
+
+    <div class="controls" id="controlButtons" style="display: none;">
+        <button class="btn-action btn-mistrack" id="btnSwipeLeft" title="Mistracked">✕</button>
+        <button class="btn-action btn-undo" id="btnUndo" title="Undo Last Swipe">↩️</button>
+        <button class="btn-action btn-ok" id="btnSwipeRight" title="Keep OK">✓</button>
+    </div>
+
+    <script>
+        function safeJsonParse(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) return fallback;
+                return JSON.parse(raw);
+            } catch (e) {
+                console.warn(`Resetting invalid localStorage key '${key}':`, e);
+                try { localStorage.removeItem(key); } catch (_) {}
+                return fallback;
+            }
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        let EXP = urlParams.get('experiment') || urlParams.get('exp') || "M156";
+        let TARGET = urlParams.get('target') || urlParams.get('field') || urlParams.get('film') || "3_F0";
+
+        const targetSelect = document.getElementById('targetSelect');
+        if (targetSelect) {
+            if (!Array.from(targetSelect.options).some(opt => opt.value === TARGET)) {
+                const opt = document.createElement('option');
+                opt.value = TARGET;
+                opt.innerText = TARGET;
+                targetSelect.appendChild(opt);
+            }
+            targetSelect.value = TARGET;
+        }
+
+        let cachedItems = [];
+        let historyStack = [];
+        let pendingResults = safeJsonParse('mistrack_pending_results', []);
+
+        const MAX_CACHED_ITEMS = 40;
+        const MAX_HISTORY_STACK = 10;
+
+        function isQuotaError(e) {
+            return e && (
+                e.name === 'QuotaExceededError' ||
+                e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+                e.code === 22 ||
+                e.code === 1014 ||
+                (e.message && e.message.toLowerCase().includes('quota'))
+            );
+        }
+
+        function loadStateForTarget() {
+            const cacheKey = `mistrack_cached_items_${EXP}_${TARGET}`;
+            const historyKey = `mistrack_history_stack_${EXP}_${TARGET}`;
+            cachedItems = safeJsonParse(cacheKey, []);
+            historyStack = safeJsonParse(historyKey, []);
+            pendingResults = safeJsonParse('mistrack_pending_results', []);
+
+            // Sanitize cached items: ensure required properties exist
+            cachedItems = cachedItems.filter(it => it && typeof it === 'object' && it.global_cell_id && it.image_base64);
+        }
+
+        function saveState() {
+            // Trim cache and history if exceeding maximum backstop limits
+            if (cachedItems.length > MAX_CACHED_ITEMS) {
+                cachedItems = cachedItems.slice(0, MAX_CACHED_ITEMS);
+            }
+            if (historyStack.length > MAX_HISTORY_STACK) {
+                historyStack = historyStack.slice(-MAX_HISTORY_STACK);
+            }
+
+            const cacheKey = `mistrack_cached_items_${EXP}_${TARGET}`;
+            const historyKey = `mistrack_history_stack_${EXP}_${TARGET}`;
+
+            try {
+                localStorage.setItem(cacheKey, JSON.stringify(cachedItems));
+                localStorage.setItem(historyKey, JSON.stringify(historyStack));
+                localStorage.setItem('mistrack_pending_results', JSON.stringify(pendingResults));
+            } catch (e) {
+                console.warn("localStorage write warning/error:", e);
+                const emptySubtitle = document.getElementById('emptySubtitle');
+                if (isQuotaError(e)) {
+                    if (emptySubtitle) emptySubtitle.innerText = "Local storage full — clearing reviewed items...";
+                    // Emergency eviction: purge history stack and keep minimal unswiped items
+                    historyStack = [];
+                    cachedItems = cachedItems.slice(0, 10);
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify(cachedItems));
+                        localStorage.setItem(historyKey, JSON.stringify(historyStack));
+                        localStorage.setItem('mistrack_pending_results', JSON.stringify(pendingResults));
+                    } catch (e2) {
+                        console.error("Emergency storage eviction failed:", e2);
+                    }
+                } else {
+                    if (emptySubtitle) emptySubtitle.innerText = `Storage error: ${e.message || 'Failed to save state'}`;
+                }
+            }
+            updateUI();
+        }
+
+        loadStateForTarget();
+
+        if (targetSelect) {
+            targetSelect.onchange = () => {
+                TARGET = targetSelect.value;
+                const newUrl = new URL(window.location);
+                newUrl.searchParams.set('target', TARGET);
+                history.replaceState(null, '', newUrl);
+
+                loadStateForTarget();
+                updateUI();
+                fetchCoverage();
+                if (cachedItems.length === 0) {
+                    fetchBatch(50);
+                }
+            };
+        }
+
+        const reviewCard = document.getElementById('reviewCard');
+        const emptyState = document.getElementById('emptyState');
+        const controlButtons = document.getElementById('controlButtons');
+        const cellIdEl = document.getElementById('cellId');
+        const windowTagEl = document.getElementById('windowTag');
+        const stripImgEl = document.getElementById('stripImg');
+        const badgeLeft = document.getElementById('badgeLeft');
+        const badgeRight = document.getElementById('badgeRight');
+        const queueCounterEl = document.getElementById('queueCounter');
+
+        function updateUI() {
+            queueCounterEl.innerText = `${cachedItems.length} cached • ${pendingResults.length} pending`;
+            
+            if (cachedItems.length > 0) {
+                const current = cachedItems[0];
+                cellIdEl.innerText = current.global_cell_id;
+                windowTagEl.innerText = `Window ${(current.window_index || 0) + 1} of ${current.total_windows || 1}`;
+                stripImgEl.src = current.image_base64;
+                
+                reviewCard.style.display = 'flex';
+                controlButtons.style.display = 'flex';
+                emptyState.style.display = 'none';
+            } else {
+                reviewCard.style.display = 'none';
+                controlButtons.style.display = 'none';
+                emptyState.style.display = 'flex';
+            }
+        }
+
+        async function fetchBatch(count = 50) {
+            const btnFetch = document.getElementById('btnFetch');
+            const emptySubtitle = document.getElementById('emptySubtitle');
+            if (btnFetch) btnFetch.disabled = true;
+            if (emptySubtitle) emptySubtitle.innerText = "Fetching review windows from server...";
+
+            let data = null;
+
+            // 1. Isolated network fetch scope
+            try {
+                let filterQuery = "";
+                const filterVal = document.getElementById('qcFilterSelect').value;
+                if (filterVal === 'exclude_bad') filterQuery = "&exclude_qc=bad";
+                else if (filterVal === 'exclude_bad_review') filterQuery = "&exclude_qc=bad,review";
+                else if (filterVal === 'good_only') filterQuery = "&include_qc=good";
+                else if (filterVal === 'unlabeled_only') filterQuery = "&include_qc=unlabeled";
+
+                const resp = await fetch(`/api/mistrack_review/batch?experiment=${EXP}&target=${TARGET}&count=${count}${filterQuery}`);
+                if (resp.ok) {
+                    data = await resp.json();
+                } else {
+                    if (emptySubtitle) emptySubtitle.innerText = `Server returned HTTP ${resp.status}. Tap Refresh.`;
+                }
+            } catch (e) {
+                console.error("Fetch batch network error:", e);
+                if (emptySubtitle) emptySubtitle.innerText = `Connection error: ${e.message || 'Server unreachable'}`;
+            } finally {
+                if (btnFetch) btnFetch.disabled = false;
+            }
+
+            // 2. Isolated state persistence scope
+            if (data && data.items && data.items.length > 0) {
+                const existingSet = new Set(cachedItems.map(it => `${it.global_cell_id}_${it.window_index}`));
+                let added = 0;
+                for (const item of data.items) {
+                    if (!item || !item.global_cell_id || !item.image_base64) continue;
+                    const key = `${item.global_cell_id}_${item.window_index}`;
+                    if (!existingSet.has(key)) {
+                        cachedItems.push(item);
+                        added++;
+                    }
+                }
+                saveState();
+                if (emptySubtitle) emptySubtitle.innerText = `Loaded ${added} review cards.`;
+            } else if (data) {
+                if (emptySubtitle) emptySubtitle.innerText = `No pending cells found for target ${TARGET}.`;
+            }
+
+            syncPending();
+            fetchCoverage();
+        }
+
+        async function fetchCoverage() {
+            try {
+                const resp = await fetch(`/api/mistrack_review/coverage?experiment=${EXP}&target=${TARGET}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const cov = data.coverage || {};
+                    const ov = data.overall || {};
+                    
+                    const label = document.getElementById('coverageLabel');
+                    const ovLabel = document.getElementById('overallCoverageLabel');
+                    const barMistrack = document.getElementById('progressMistracked');
+                    const barExhausted = document.getElementById('progressExhausted');
+
+                    if (label && cov.total_cells !== undefined) {
+                        label.innerText = `${TARGET} Coverage: ${cov.percent_reviewed}% (${cov.mistracked + cov.exhausted}/${cov.total_cells} cells)`;
+                    }
+
+                    if (ovLabel && ov.percent_reviewed !== undefined) {
+                        ovLabel.innerText = `Overall: ${ov.percent_reviewed}% (${ov.mistracked + ov.exhausted}/${ov.total_cells})`;
+                    }
+
+                    if (cov.total_cells > 0) {
+                        const mPct = (cov.mistracked / cov.total_cells) * 100;
+                        const ePct = (cov.exhausted / cov.total_cells) * 100;
+                        if (barMistrack) barMistrack.style.width = `${mPct}%`;
+                        if (barExhausted) barExhausted.style.width = `${ePct}%`;
+                    }
+                }
+            } catch (e) {
+                console.warn("Fetch coverage error:", e);
+            }
+        }
+
+        let isSyncing = false;
+
+        async function syncPending() {
+            if (pendingResults.length === 0 || isSyncing) return;
+            isSyncing = true;
+            try {
+                while (pendingResults.length > 0) {
+                    const item = pendingResults[0];
+                    const resp = await fetch('/api/mistrack_review/result', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            experiment: item.experiment || EXP,
+                            target: item.target || TARGET,
+                            global_cell_id: item.global_cell_id,
+                            window_index: item.window_index,
+                            swipe: item.swipe
+                        })
+                    });
+                    if (resp.ok) {
+                        const synced = pendingResults.shift();
+                        // Evict synced item from cachedItems immediately
+                        cachedItems = cachedItems.filter(it => !(it.global_cell_id === synced.global_cell_id && it.window_index === synced.window_index));
+                        saveState();
+                    } else {
+                        break;
+                    }
+                }
+            } catch (e) {
+                console.error("Sync error:", e);
+            } finally {
+                isSyncing = false;
+            }
+        }
+
+        function swipe(action) {
+            if (cachedItems.length === 0) return;
+            const current = cachedItems[0];
+            
+            historyStack.push({
+                item: current,
+                swipe: action,
+                experiment: EXP,
+                target: TARGET
+            });
+            if (historyStack.length > MAX_HISTORY_STACK) {
+                historyStack.shift();
+            }
+
+            pendingResults.push({
+                experiment: EXP,
+                target: TARGET,
+                global_cell_id: current.global_cell_id,
+                window_index: current.window_index,
+                swipe: action
+            });
+
+            if (action === 'left') {
+                cachedItems = cachedItems.filter(it => it.global_cell_id !== current.global_cell_id);
+            } else {
+                cachedItems.shift();
+            }
+
+            saveState();
+            syncPending();
+        }
+
+        async function undoLastSwipe() {
+            if (historyStack.length === 0) return;
+            const lastEntry = historyStack.pop();
+            const item = lastEntry.item;
+            const itemExp = lastEntry.experiment || EXP;
+            const itemTarget = lastEntry.target || TARGET;
+
+            pendingResults = pendingResults.filter(p => !(p.global_cell_id === item.global_cell_id && p.window_index === item.window_index));
+
+            if (!cachedItems.some(it => it.global_cell_id === item.global_cell_id && it.window_index === item.window_index)) {
+                cachedItems.unshift(item);
+            }
+
+            saveState();
+
+            try {
+                await fetch('/api/mistrack_review/undo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        experiment: itemExp,
+                        target: itemTarget,
+                        global_cell_id: item.global_cell_id,
+                        window_index: item.window_index
+                    })
+                });
+            } catch (e) {
+                console.error("Undo server request error:", e);
+            }
+        }
+
+        let startX = 0, currentX = 0;
+        reviewCard.addEventListener('touchstart', e => {
+            startX = e.touches[0].clientX;
+        });
+
+        reviewCard.addEventListener('touchmove', e => {
+            currentX = e.touches[0].clientX - startX;
+            reviewCard.style.transform = `translateX(${currentX}px) rotate(${currentX / 20}deg)`;
+            
+            if (currentX < -40) {
+                badgeLeft.style.opacity = 1;
+                badgeRight.style.opacity = 0;
+            } else if (currentX > 40) {
+                badgeRight.style.opacity = 1;
+                badgeLeft.style.opacity = 0;
+            } else {
+                badgeLeft.style.opacity = 0;
+                badgeRight.style.opacity = 0;
+            }
+        });
+
+        reviewCard.addEventListener('touchend', e => {
+            badgeLeft.style.opacity = 0;
+            badgeRight.style.opacity = 0;
+            if (currentX < -100) {
+                swipe('left');
+            } else if (currentX > 100) {
+                swipe('right');
+            }
+            reviewCard.style.transform = 'none';
+            startX = 0; currentX = 0;
+        });
+
+        const filterSelect = document.getElementById('qcFilterSelect');
+        const savedFilter = localStorage.getItem('mistrack_qc_filter') || 'exclude_bad';
+        filterSelect.value = savedFilter;
+
+        filterSelect.onchange = () => {
+            localStorage.setItem('mistrack_qc_filter', filterSelect.value);
+            cachedItems = [];
+            saveState();
+            fetchBatch(50);
+        };
+
+        document.getElementById('btnSwipeLeft').onclick = () => swipe('left');
+        document.getElementById('btnUndo').onclick = () => undoLastSwipe();
+        document.getElementById('btnSwipeRight').onclick = () => swipe('right');
+        document.getElementById('btnFetch').onclick = () => {
+            cachedItems = [];
+            saveState();
+            fetchBatch(50);
+        };
+        document.getElementById('btnRefresh').onclick = () => {
+            cachedItems = [];
+            saveState();
+            fetchBatch(50);
+        };
+        const btnClearCache = document.getElementById('btnClearCache');
+        if (btnClearCache) {
+            btnClearCache.onclick = () => {
+                try {
+                    localStorage.removeItem(`mistrack_cached_items_${EXP}_${TARGET}`);
+                    localStorage.removeItem(`mistrack_history_stack_${EXP}_${TARGET}`);
+                } catch (e) {}
+                cachedItems = [];
+                historyStack = [];
+                saveState();
+                fetchBatch(50);
+            };
+        }
+
+        updateUI();
+        if (cachedItems.length === 0) fetchBatch(50);
+    </script>
+</body>
+</html>

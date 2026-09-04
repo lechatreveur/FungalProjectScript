@@ -97,10 +97,12 @@ def get_curated_cells(experiment, sequence, film, tracked_dir):
         films = linkage.get(sequence, {}).get("films", [])
         global_cells = linkage.get(sequence, {}).get("global_cells", {})
         
+        from tracking_corrector.qc_schema import GlobalCellQC
         if film in films:
             film_idx = films.index(film)
             for g_id, status in qc.items():
-                if status.lower() not in ["good", "corrected", "bad"]:
+                st_val = status.get("status") if isinstance(status, dict) else str(status)
+                if st_val.lower() not in GlobalCellQC.valid_statuses():
                     continue
                 if g_id in global_cells:
                     local_ids = global_cells[g_id]
@@ -125,10 +127,11 @@ def get_curated_cells(experiment, sequence, film, tracked_dir):
             for _, row in df.iterrows():
                 cid = int(row["cell_id"])
                 status = str(row.get("status", "")).strip().lower()
-                if status in ["good", "corrected", "bad"]:
+                if status in GlobalCellQC.valid_statuses():
                     curated_ids.add(cid)
         except Exception:
             pass
+
             
     return curated_ids
 
