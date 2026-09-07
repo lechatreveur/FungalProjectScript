@@ -68,9 +68,11 @@ class GTExportService:
                 rows = df[df["time_point"] == local_t]
                 if rows.empty: continue
 
-                rle = str(rows.iloc[0].get("rle_bf", ""))
+                primary_col = "rle_gfp" if "FL" in film else "rle_bf"
+                alt_col = "rle_bf" if primary_col == "rle_gfp" else "rle_gfp"
+                rle = str(rows.iloc[0].get(primary_col, ""))
                 if not rle or rle.strip() == "" or rle.lower() == "nan":
-                    rle = str(rows.iloc[0].get("rle_gfp", ""))
+                    rle = str(rows.iloc[0].get(alt_col, ""))
                 if not rle or rle.strip() == "" or rle.lower() == "nan":
                     continue
 

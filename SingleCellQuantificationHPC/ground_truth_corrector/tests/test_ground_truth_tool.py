@@ -177,6 +177,42 @@ class TestGroundTruthTool(unittest.TestCase):
         self.assertEqual(data_exp_all["status"], "success")
         self.assertEqual(data_exp_all["total_keyframes_exported"], 3)
 
+        # 9. Identify cell hit testing
+        # Tracked cell at (20, 20)
+        res_id = self.client.post("/api/identify_cell", json={
+            "experiment": self.exp,
+            "film": self.film,
+            "t": 0,
+            "x": 20,
+            "y": 20
+        })
+        self.assertEqual(res_id.status_code, 200)
+        self.assertEqual(res_id.get_json()["cell_id"], "1")
+
+        # Untracked background/debris at (90, 90)
+        res_empty = self.client.post("/api/identify_cell", json={
+            "experiment": self.exp,
+            "film": self.film,
+            "t": 0,
+            "x": 90,
+            "y": 90
+        })
+        self.assertEqual(res_empty.status_code, 404)
+        self.assertEqual(res_empty.get_json()["status"], "untracked_segment")
+
+    def test_normalize_cell_key(self):
+        from ground_truth_corrector.routes.masks_bp import normalize_cell_key
+        global_cells = {
+            "5_1_N1_F1_cell_4": [4, 4, 4],
+            "5_1_N1_F1_cell_40": [40, 40, 40]
+        }
+        self.assertEqual(normalize_cell_key(global_cells, "5_1_N1_F1_cell_4"), "5_1_N1_F1_cell_4")
+        self.assertEqual(normalize_cell_key(global_cells, "4"), "5_1_N1_F1_cell_4")
+        self.assertEqual(normalize_cell_key(global_cells, "40"), "5_1_N1_F1_cell_40")
+        # Ensure '4' does not match 'cell_40'
+        self.assertNotEqual(normalize_cell_key(global_cells, "4"), "5_1_N1_F1_cell_40")
+
 
 if __name__ == "__main__":
     unittest.main()
+

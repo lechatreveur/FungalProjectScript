@@ -24,7 +24,7 @@ def normalize_cell_key(global_cells: Dict[str, Any], cell_id: str, sequence: Opt
     if sequence and f"{sequence}_cell_{s_id}" in global_cells:
         return f"{sequence}_cell_{s_id}"
     for k in global_cells:
-        if k == s_id or k.endswith(f"cell_{s_id}") or (s_id.isdigit() and k.endswith(f"_{s_id}")):
+        if k == s_id or k.endswith(f"_cell_{s_id}"):
             return k
     return s_id
 
@@ -348,8 +348,9 @@ def save_mask():
     # 1. Resolve target film and local cell ID
     target_film = req.film
     local_cid = None
-    
-    if req.sequence and not target_film:
+    if not req.sequence and str(req.cell_id).isdigit():
+        local_cid = int(req.cell_id)
+    elif req.sequence and not target_film:
         seq_res = linkage_svc.get_sequences(req.experiment)
         seq_info = seq_res.get("sequences", {}).get(req.sequence, {})
         films = seq_info.get("films", [req.sequence])
@@ -688,18 +689,17 @@ def identify_cell():
                         if hit_lbl > 0:
                             local2global = frames_svc.local_to_global_map(exp, target_film, sequence)
                             ident = frames_svc.seg_label_identity(exp, target_film, local_t, seg, H, W, local2global, sequence=sequence)
-                            if hit_lbl in ident:
-                                local_cid = hit_lbl
-                            else:
-                                local_cid = hit_lbl
+                            hit = ident.get(hit_lbl)
+                            if hit is not None and len(hit) >= 3:
+                                local_cid = hit[2]
                 except Exception:
                     pass
 
     if local_cid is None:
-        return jsonify({"status": "not_found", "message": "No cell found at coordinates"}), 404
+        return jsonify({"status": "untracked_segment", "message": "Untracked segment / debris (not registered in tracked cells)"}), 404
 
     # 3. Map local_cid to global cell ID if in a sequence
-    global_cid = str(local_cid)
+    global_cid = None
     if sequence:
         seq_res = linkage_svc.get_sequences(exp)
         seq_info = seq_res.get("sequences", {}).get(sequence, {})
@@ -714,17 +714,22 @@ def identify_cell():
                 cur_track = global_cells[current_cell_id]
                 if f_idx < len(cur_track) and cur_track[f_idx] == local_cid:
                     global_cid = current_cell_id
-                else:
-                    for gid, track in global_cells.items():
-                        if f_idx < len(track) and track[f_idx] == local_cid:
-                            global_cid = gid
-                            break
-            else:
+            
+            if global_cid is None:
                 for gid, track in global_cells.items():
                     if f_idx < len(track) and track[f_idx] == local_cid:
                         global_cid = gid
                         break
 
+        if global_cid is None:
+            return jsonify({
+                "status": "unlinked_local_cell",
+                "message": f"Local cell {local_cid} in {target_film} is not linked to any global cell track",
+                "local_cell_id": local_cid,
+                "film": target_film
+            }), 404
+    else:
+        global_cid = str(local_cid)
 
     return jsonify({
         "status": "success",

@@ -266,9 +266,11 @@ class GTFramesService:
                 if labels_here.size == 0:
                     continue
                 vals, counts = np.unique(labels_here, return_counts=True)
+                best_lbl = int(vals[np.argmax(counts)])
                 identity = local2global.get(cid, cid)
                 display = format_cell_display_label(local2global.get(cid, cid))
-                out.setdefault(best_lbl, (stable_color_key(identity), display))
+                gid_val = local2global.get(cid)
+                out.setdefault(best_lbl, (stable_color_key(identity), display, cid, gid_val))
             except Exception:
                 continue
         self._ident_cache[cache_key] = out

@@ -543,28 +543,36 @@ async function activateCellAtCoords(x, y) {
         const data = await res.json();
 
         if (data.status === 'success' && data.cell_id) {
-            if (state.viewMode === 'population') {
-                state.viewMode = 'single';
-                const viewBtn = document.getElementById('viewModeBtn');
-                if (viewBtn) {
-                    viewBtn.innerText = 'Single Cell';
-                    viewBtn.style.backgroundColor = 'var(--accent-primary)';
+            const cellExists = state.cells.some(c => String(c.global_id) === String(data.cell_id) || String(c.id) === String(data.cell_id));
+            if (cellExists) {
+                if (state.viewMode === 'population') {
+                    state.viewMode = 'single';
+                    const viewBtn = document.getElementById('viewModeBtn');
+                    if (viewBtn) {
+                        viewBtn.innerText = 'Single Cell';
+                        viewBtn.style.backgroundColor = 'var(--accent-primary)';
+                    }
+                    const brushBtn = document.getElementById('toolBrushBtn');
+                    const eraserBtn = document.getElementById('toolEraserBtn');
+                    if (brushBtn) { brushBtn.disabled = false; brushBtn.style.opacity = '1.0'; }
+                    if (eraserBtn) { eraserBtn.disabled = false; eraserBtn.style.opacity = '1.0'; }
                 }
-                const brushBtn = document.getElementById('toolBrushBtn');
-                const eraserBtn = document.getElementById('toolEraserBtn');
-                if (brushBtn) { brushBtn.disabled = false; brushBtn.style.opacity = '1.0'; }
-                if (eraserBtn) { eraserBtn.disabled = false; eraserBtn.style.opacity = '1.0'; }
-            }
 
-            await selectCell(data.cell_id, { preserveView: true });
-            if (statusText) {
-                statusText.innerText = `Selected ${data.cell_id}`;
-                statusText.style.color = 'var(--accent-green)';
+                await selectCell(data.cell_id, { preserveView: true });
+                if (statusText) {
+                    statusText.innerText = `Selected ${data.cell_id}`;
+                    statusText.style.color = 'var(--accent-green)';
+                }
+            } else {
+                if (statusText) {
+                    statusText.innerText = data.message || 'Untracked segment (not in global list)';
+                    statusText.style.color = 'var(--accent-orange, #ffaa00)';
+                }
             }
         } else {
             if (statusText) {
-                statusText.innerText = 'No cell mask found at click';
-                statusText.style.color = 'var(--accent-red)';
+                statusText.innerText = data.message || 'Untracked segment / debris';
+                statusText.style.color = 'var(--accent-orange, #ffaa00)';
             }
         }
     } catch (err) {
