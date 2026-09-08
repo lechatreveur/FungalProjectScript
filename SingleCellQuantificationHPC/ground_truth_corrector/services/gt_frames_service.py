@@ -314,12 +314,23 @@ class GTFramesService:
                 for k in keys_to_del:
                     cache_dict.pop(k, None)
 
-    def render_population_frame_jpeg(self, exp: str, film: str, t_val: int, sequence: Optional[str] = None, quality: int = 85) -> bytes:
+    def render_population_frame_jpeg(self, exp: str, film: str, t_val: int, sequence: Optional[str] = None, quality: int = 85, force: bool = False) -> bytes:
         # Colour now depends on the sequence (local id -> global_cell_id), so the
         # sequence is part of the cache key.
         cache_key = (exp, film, t_val, sequence)
-        if cache_key in self._pop_cache:
+        if not force and cache_key in self._pop_cache:
             return self._pop_cache[cache_key]
+
+        # Check on-disk cache if sequence directory exists
+        disk_cache_file: Optional[Path] = None
+        if sequence:
+            seq_dir = resolve_under_root(self.config.local_movie_root, exp, sequence, f"GTPopulationFrames_{sequence}")
+            seq_dir.mkdir(parents=True, exist_ok=True)
+            disk_cache_file = seq_dir / f"{film}_t_{t_val:03d}.jpg"
+            if not force and disk_cache_file.exists() and disk_cache_file.stat().st_size > 0:
+                data = disk_cache_file.read_bytes()
+                self._pop_cache[cache_key] = data
+                return data
 
         local2global = self.local_to_global_map(exp, film, sequence)
 
@@ -417,4 +428,9 @@ class GTFramesService:
         is_success, buffer = cv2.imencode(".jpg", blended, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         jpeg_bytes = buffer.tobytes()
         self._pop_cache[cache_key] = jpeg_bytes
+        if disk_cache_file:
+            try:
+                disk_cache_file.write_bytes(jpeg_bytes)
+            except Exception:
+                pass
         return jpeg_bytes
