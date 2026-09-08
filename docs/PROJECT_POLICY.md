@@ -90,6 +90,11 @@ than picking the convenient rule.
 - **Hygiene.** No credentials, host addresses, cookies, or payload dumps in
   commits. Environment-specific absolute paths belong in config or a resolver,
   not hard-coded into new scripts.
+- **Chat Math & Formula Notation (Unicode).** The IDE chat panel does not parse
+  raw LaTeX delimiters. All formulas, variables, and Greek symbols in conversational
+  responses must be rendered using clean Unicode characters (e.g., ΔI, θ, μ, σ,
+  Ī_S, Ī_C, u_long, u_short, Δp_long, √(Δx² + Δy²), ≤, ≥, ≈, ×, →) rather than
+  raw LaTeX `$ ... $` or `$$ ... $$` delimiters.
 
 ### Reproducibility baseline
 

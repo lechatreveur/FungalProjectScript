@@ -113,6 +113,7 @@ are context or evidence, not policy.
   before major production-code changes.
 - Record parameters, seeds, resolution, input paths, output paths, and the
   validation result for any run whose output is kept.
+- **Chat Math and Formula Notation**: Always use clean Unicode characters (e.g., ΔI, θ, μ, σ, Ī_S, Ī_C, u_long, u_short, Δp_long, √(Δx² + Δy²), ≤, ≥, ≈, ×, →) for mathematical expressions and variables in AI chat responses, rather than raw LaTeX `$...$` delimiters (which do not render in the chat panel).
 
 ## Guardrails
 
