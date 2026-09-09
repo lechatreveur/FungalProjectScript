@@ -152,55 +152,8 @@ def get_frame_boundaries():
     target_film = res["film"]
     local_t = res["local_t"]
 
-    cache_key = (exp, target_film, local_t, sequence)
-    if cache_key in frames_svc._boundaries_cache:
-        resp = Response(frames_svc._boundaries_cache[cache_key], mimetype="image/png")
-        resp.headers["Cache-Control"] = "public, max-age=86400"
-        return resp
-
-    masks_dir = base_root / exp / target_film / f"Masks_{target_film}"
-    files = []
-    if masks_dir.exists():
-        files = sorted([f for f in masks_dir.glob(f"*_t_{local_t:03d}_c_*_seg.tif") if not f.name.startswith(".")])
-        if not files:
-            files = sorted([f for f in masks_dir.glob(f"*_t{local_t:03d}_*_seg.tif") if not f.name.startswith(".")])
-            
-    if not files:
-        # Transparent 1x1 fallback PNG
-        empty_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-        resp = Response(empty_png, mimetype="image/png")
-        resp.headers["Cache-Control"] = "public, max-age=86400"
-        return resp
-
     try:
-        from ..services.gt_frames_service import id_to_color, UNTRACKED_COLOR
-
-        seg = imread(str(files[0]))
-        seg_lbl = (label(seg) if seg.dtype == bool else seg).copy()
-
-        # Build boundary outline overlay image (BGRA, as cv2.imencode expects).
-        H, W = seg_lbl.shape[:2]
-        rgba = np.zeros((H, W, 4), dtype=np.uint8)
-
-        # Colour each cell's outline by its stable identity, so a cell keeps one
-        # colour across keyframes / films (matches the population view).
-        local2global = frames_svc.local_to_global_map(exp, target_film, sequence)
-        ident = frames_svc.seg_label_identity(exp, target_film, local_t, seg_lbl, H, W, local2global, sequence=sequence)
-        for lbl in np.unique(seg_lbl):
-            if lbl == 0:
-                continue
-            hit = ident.get(int(lbl))
-            b, g, r = id_to_color(hit[0]) if hit is not None else UNTRACKED_COLOR
-            contours, _ = cv2.findContours(
-                (seg_lbl == lbl).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
-            )
-            cv2.drawContours(rgba, contours, -1, (int(b), int(g), int(r), 255), 1)
-
-        is_success, buffer = cv2.imencode(".png", rgba)
-        if not is_success:
-            raise RuntimeError("Failed to encode boundaries PNG")
-        png_bytes = buffer.tobytes()
-        frames_svc._boundaries_cache[cache_key] = png_bytes
+        png_bytes = frames_svc.render_boundary_png(exp, target_film, local_t, sequence=sequence)
         resp = Response(png_bytes, mimetype="image/png")
         resp.headers["Cache-Control"] = "public, max-age=86400"
         return resp

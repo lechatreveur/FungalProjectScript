@@ -13,9 +13,8 @@ from ..errors import NotFoundError
 from ..schemas import validate_and_decode_rle
 
 # Colour rendered for a segmentation region that has no tracked cell behind it
-# (BGR, for cv2). Never colour such a region by its raw seg label — seg labels
-# are per-frame and not a stable identity.
-UNTRACKED_COLOR = (150, 150, 150)
+# (BGR, for cv2). Unassigned / untracked segments are rendered in pure white.
+UNTRACKED_COLOR = (255, 255, 255)
 
 def find_time_from_name(name: str) -> Optional[int]:
     m = re.search(r"_t_(\d+)_", name)
@@ -95,6 +94,39 @@ class GTFramesService:
         self._pop_cache: Dict[Tuple, bytes] = {}
         self._boundaries_cache: Dict[Tuple, bytes] = {}
         self._ident_cache: Dict[Tuple, Dict[int, Tuple[int, str]]] = {}
+        self._film_rle_cache: Dict[Tuple[str, str, int], Dict[int, str]] = {}
+        self._parsed_films: set = set()
+
+    def get_film_cell_rles_at_t(self, exp: str, film: str, t_val: int) -> Dict[int, str]:
+        """Returns {cid: rle_str} for a film at timepoint t_val, parsing all CSVs in film once."""
+        cache_key = (exp, film, t_val)
+        film_key = (exp, film)
+        if film_key not in self._parsed_films:
+            self._parsed_films.add(film_key)
+            tracked_dir = resolve_under_root(self.config.local_movie_root, exp, film, f"TrackedCells_{film}")
+            if tracked_dir.exists():
+                for csv_file in tracked_dir.glob("cell_*_masks.csv"):
+                    if csv_file.name.startswith("."):
+                        continue
+                    m = re.match(r"^cell_(\d+)_masks\.csv$", csv_file.name)
+                    if not m:
+                        continue
+                    cid = int(m.group(1))
+                    try:
+                        df = pd.read_csv(csv_file)
+                        for _, row in df.iterrows():
+                            t = int(row["time_point"])
+                            rle = str(row.get("rle_bf", "") or "")
+                            if not rle.strip() or rle.lower() == "nan":
+                                rle = str(row.get("rle_gfp", "") or "")
+                            if rle.strip() and rle.lower() != "nan":
+                                tk = (exp, film, t)
+                                if tk not in self._film_rle_cache:
+                                    self._film_rle_cache[tk] = {}
+                                self._film_rle_cache[tk][cid] = rle
+                    except Exception:
+                        continue
+        return self._film_rle_cache.get(cache_key, {})
 
     def get_film_frame_paths(self, exp: str, film: str, channel: str = "bf") -> Dict[int, Path]:
         key = (exp, film, channel.lower())
@@ -313,6 +345,16 @@ class GTFramesService:
                 keys_to_del = [k for k in cache_dict if k[0] == exp and (film is None or k[1] == film) and (t_val is None or k[2] == t_val)]
                 for k in keys_to_del:
                     cache_dict.pop(k, None)
+        if exp is None:
+            self._film_rle_cache.clear()
+            self._parsed_films.clear()
+        else:
+            rle_keys_to_del = [k for k in self._film_rle_cache if k[0] == exp and (film is None or k[1] == film) and (t_val is None or k[2] == t_val)]
+            for k in rle_keys_to_del:
+                self._film_rle_cache.pop(k, None)
+            parsed_to_del = [k for k in self._parsed_films if k[0] == exp and (film is None or k[1] == film)]
+            for k in parsed_to_del:
+                self._parsed_films.discard(k)
 
     def render_population_frame_jpeg(self, exp: str, film: str, t_val: int, sequence: Optional[str] = None, quality: int = 85, force: bool = False) -> bytes:
         # Colour now depends on the sequence (local id -> global_cell_id), so the
@@ -349,12 +391,8 @@ class GTFramesService:
         H, W = bg.shape[:2]
 
         overlay = np.zeros_like(img_bgr, dtype=np.uint8)
-        alpha = 0.4
+        alpha = 0.45
 
-        # Fast path: check for _seg.tif directly
-        masks_dir = resolve_under_root(self.config.local_movie_root, exp, film, f"Masks_{film}")
-        seg_candidates = list(masks_dir.glob(f"*_t_{t_val:03d}_*_seg.tif")) or list(masks_dir.glob(f"*_t{t_val:03d}_*_seg.tif")) or list(masks_dir.glob(f"*_t_{t_val}_*_seg.tif"))
-        
         def _put_label(cx: int, cy: int, text: str) -> None:
             font = cv2.FONT_HERSHEY_SIMPLEX
             scale = 0.8
@@ -366,57 +404,49 @@ class GTFramesService:
             cv2.putText(img_bgr, text, (tx, ty), font, scale, (0, 0, 0), thickness_outline, cv2.LINE_AA)
             cv2.putText(img_bgr, text, (tx, ty), font, scale, (255, 255, 255), thickness_text, cv2.LINE_AA)
 
+        # 1. Load updated individual cell masks from TrackedCells_<film>
+        tracked_union = np.zeros((H, W), dtype=bool)
+        cell_draw_list = []
+        rles_dict = self.get_film_cell_rles_at_t(exp, film, t_val)
+        for cid, rle in rles_dict.items():
+            try:
+                mask = validate_and_decode_rle(rle, H, W)
+                if not mask.any():
+                    continue
+
+                tracked_union |= (mask > 0)
+                identity = local2global.get(cid, cid)
+                # Global cell color (BGR)
+                b, g, r = id_to_color(stable_color_key(identity))
+                display = format_cell_display_label(identity)
+                ys, xs = np.where(mask > 0)
+                cx, cy = int(np.mean(xs)), int(np.mean(ys))
+                cell_draw_list.append((mask, (b, g, r), (cx, cy), display, identity))
+            except Exception:
+                continue
+
+        # 2. Layer 1: Render Untracked / Background Cellpose segments in pure WHITE (255, 255, 255)
+        masks_dir = resolve_under_root(self.config.local_movie_root, exp, film, f"Masks_{film}")
+        seg_candidates = list(masks_dir.glob(f"*_t_{t_val:03d}_*_seg.tif")) or list(masks_dir.glob(f"*_t{t_val:03d}_*_seg.tif")) or list(masks_dir.glob(f"*_t_{t_val}_*_seg.tif"))
         if seg_candidates and seg_candidates[0].exists():
-            seg = imread(str(seg_candidates[0]))
-            if seg.ndim > 2: seg = seg[..., 0]
-            max_lbl = int(seg.max())
-            if max_lbl > 0:
-                # Map each raw seg label to the stable identity of the tracked
-                # cell that occupies it, so a cell keeps one colour across time.
-                ident = self.seg_label_identity(exp, film, t_val, seg, H, W, local2global, sequence=sequence)
-                lut = np.zeros((max_lbl + 1, 3), dtype=np.uint8)
-                for r in regionprops(seg):
-                    hit = ident.get(r.label)
-                    lut[r.label] = id_to_color(hit[0]) if hit is not None else UNTRACKED_COLOR
-                overlay = lut[seg]
-                for r in regionprops(seg):
-                    cy, cx = int(r.centroid[0]), int(r.centroid[1])
-                    hit = ident.get(r.label)
-                    if hit is not None:
-                        _put_label(cx, cy, hit[1])
-        else:
-            # Fallback: scan tracked-cell CSVs directly (already an identity).
-            tracked_dir = resolve_under_root(self.config.local_movie_root, exp, film, f"TrackedCells_{film}")
-            if tracked_dir.exists():
-                for csv_file in tracked_dir.glob("cell_*_masks.csv"):
-                    if csv_file.name.startswith("."): continue
-                    m = re.match(r"^cell_(\d+)_masks\.csv$", csv_file.name)
-                    if not m: continue
-                    cid = int(m.group(1))
+            try:
+                seg = imread(str(seg_candidates[0]))
+                if seg.ndim > 2:
+                    seg = seg[..., 0]
+                untracked_mask = (seg > 0) & (~tracked_union)
+                if untracked_mask.any():
+                    overlay[untracked_mask] = (255, 255, 255)  # Pure white fill
+                    contours, _ = cv2.findContours(untracked_mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                    cv2.drawContours(img_bgr, contours, -1, (255, 255, 255), 1)  # Thin white contour
+            except Exception:
+                pass
 
-                    try:
-                        df = pd.read_csv(csv_file)
-                        rows = df[df["time_point"] == t_val]
-                        if rows.empty: continue
-                        rle = str(rows.iloc[0].get("rle_bf", ""))
-                        if not rle or rle.strip() == "" or rle.lower() == "nan":
-                            rle = str(rows.iloc[0].get("rle_gfp", ""))
-                        if not rle or rle.strip() == "" or rle.lower() == "nan": continue
-
-                        mask = validate_and_decode_rle(rle, H, W)
-                        if not mask.any(): continue
-
-                        identity = local2global.get(cid, cid)
-                        b, g, r = id_to_color(stable_color_key(identity))
-                        overlay[mask > 0] = (b, g, r)
-
-                        ys, xs = np.where(mask > 0)
-                        if len(xs) > 0:
-                            cx, cy = int(np.mean(xs)), int(np.mean(ys))
-                            display = format_cell_display_label(local2global.get(cid, cid))
-                            _put_label(cx, cy, display)
-                    except Exception:
-                        continue
+        # 3. Layer 2: Render Tracked Global Cell Masks & Outlines & Labels
+        for mask, (b, g, r), (cx, cy), display, identity in cell_draw_list:
+            overlay[mask > 0] = (b, g, r)
+            contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(img_bgr, contours, -1, (b, g, r), 2)
+            _put_label(cx, cy, display)
 
         blended = cv2.addWeighted(overlay, alpha, img_bgr, 1.0, 0.0)
 
@@ -434,3 +464,70 @@ class GTFramesService:
             except Exception:
                 pass
         return jpeg_bytes
+
+    def render_boundary_png(self, exp: str, film: str, t_val: int, sequence: Optional[str] = None, force: bool = False) -> bytes:
+        cache_key = (exp, film, t_val, sequence)
+        if not force and cache_key in self._boundaries_cache:
+            return self._boundaries_cache[cache_key]
+
+        disk_cache_file: Optional[Path] = None
+        if sequence:
+            seq_dir = resolve_under_root(self.config.local_movie_root, exp, sequence, f"GTPopulationFrames_{sequence}")
+            seq_dir.mkdir(parents=True, exist_ok=True)
+            disk_cache_file = seq_dir / f"{film}_t_{t_val:03d}_boundaries.png"
+            if not force and disk_cache_file.exists() and disk_cache_file.stat().st_size > 0:
+                data = disk_cache_file.read_bytes()
+                self._boundaries_cache[cache_key] = data
+                return data
+
+        local2global = self.local_to_global_map(exp, film, sequence)
+
+        sample_path = self.get_frame_path(exp, film, t_val)
+        sample_img = imread(str(sample_path))
+        H, W = sample_img.shape[:2]
+
+        rgba = np.zeros((H, W, 4), dtype=np.uint8)
+        tracked_union = np.zeros((H, W), dtype=bool)
+
+        # 1. Tracked cells from updated individual CSV masks
+        rles_dict = self.get_film_cell_rles_at_t(exp, film, t_val)
+        for cid, rle in rles_dict.items():
+            try:
+                mask = validate_and_decode_rle(rle, H, W)
+                if not mask.any():
+                    continue
+                tracked_union |= (mask > 0)
+
+                identity = local2global.get(cid, cid)
+                b, g, r = id_to_color(stable_color_key(identity))
+                contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                cv2.drawContours(rgba, contours, -1, (int(b), int(g), int(r), 255), 2)
+            except Exception:
+                continue
+
+        # 2. Untracked Cellpose background/debris segments in pure WHITE (255, 255, 255, 180)
+        masks_dir = resolve_under_root(self.config.local_movie_root, exp, film, f"Masks_{film}")
+        seg_files = list(masks_dir.glob(f"*_t_{t_val:03d}_*_seg.tif")) or list(masks_dir.glob(f"*_t{t_val:03d}_*_seg.tif"))
+        if seg_files and seg_files[0].exists():
+            try:
+                seg = imread(str(seg_files[0]))
+                if seg.ndim > 2:
+                    seg = seg[..., 0]
+                untracked_mask = (seg > 0) & (~tracked_union)
+                if untracked_mask.any():
+                    contours, _ = cv2.findContours(untracked_mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                    cv2.drawContours(rgba, contours, -1, (255, 255, 255, 180), 1)
+            except Exception:
+                pass
+
+        is_success, buffer = cv2.imencode(".png", rgba)
+        if not is_success:
+            raise RuntimeError("Failed to encode boundaries PNG")
+        png_bytes = buffer.tobytes()
+        self._boundaries_cache[cache_key] = png_bytes
+        if disk_cache_file:
+            try:
+                disk_cache_file.write_bytes(png_bytes)
+            except Exception:
+                pass
+        return png_bytes

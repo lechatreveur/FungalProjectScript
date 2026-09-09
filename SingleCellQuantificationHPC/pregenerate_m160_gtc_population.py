@@ -64,13 +64,26 @@ def pregenerate_gtc_sequence(
                 force=force
             )
             count += 1
-            if (idx + 1) % 5 == 0 or idx == 0 or (idx + 1) == total_kfs:
-                print(f"  [{sequence}] Keyframe {idx+1:02d}/{total_kfs:02d} ({film} t={local_t:03d} {pos}) rendered ({len(jpeg_bytes)//1024} KB)", flush=True)
         except Exception as e:
             print(f"  [ERROR] Failed to render population frame for {sequence} {film} t={local_t}: {e}")
 
+        # 2. Render & cache boundary PNG
+        try:
+            png_bytes = gt_svc.render_boundary_png(
+                exp=exp,
+                film=film,
+                t_val=local_t,
+                sequence=sequence,
+                force=force
+            )
+        except Exception as e:
+            print(f"  [ERROR] Failed to render boundary PNG for {sequence} {film} t={local_t}: {e}")
+
+        if (idx + 1) % 5 == 0 or idx == 0 or (idx + 1) == total_kfs:
+            print(f"  [{sequence}] Keyframe {idx+1:02d}/{total_kfs:02d} ({film} t={local_t:03d} {pos}) rendered (Pop: {len(jpeg_bytes)//1024} KB, Bound: {len(png_bytes)//1024} KB)", flush=True)
+
     t_elapsed = time.time() - t_start
-    print(f"✓ Completed GTC population frame pregeneration for {sequence} ({count}/{total_kfs} frames in {t_elapsed:.2f} s)")
+    print(f"✓ Completed GTC population frame & boundary pregeneration for {sequence} ({count}/{total_kfs} keyframes in {t_elapsed:.2f} s)")
     return count
 
 

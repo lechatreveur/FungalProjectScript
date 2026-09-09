@@ -16,7 +16,8 @@ function fnv1a32(s) {
 
 function idToColor(id) {
     // Knuth multiplicative hash -> hue; s=0.8, v=0.95. Returns [r, g, b] 0-255.
-    const val = ((id >>> 0) * 2654435761) % 4294967296;
+    // Uses BigInt to ensure 64-bit integer multiplication matches Python server exactly.
+    const val = Number((BigInt(id >>> 0) * 2654435761n) % 4294967296n);
     const h = (val % 360) / 360.0;
     const s = 0.8, v = 0.95;
     let i = Math.floor(h * 6);
