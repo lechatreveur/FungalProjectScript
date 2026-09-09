@@ -264,29 +264,13 @@ class GTFramesService:
             return self._ident_cache[cache_key]
 
         out: Dict[int, Tuple[int, str]] = {}
-        tracked_dir = resolve_under_root(self.config.local_movie_root, exp, film, f"TrackedCells_{film}")
-        if not tracked_dir.exists():
-            return out
-
+        rles_dict = self.get_film_cell_rles_at_t(exp, film, local_t)
         seg_flat = seg_lbl.flatten(order='F')
-        for csv_file in tracked_dir.glob("cell_*_masks.csv"):
-            if csv_file.name.startswith("."):
-                continue
-            m = re.match(r"^cell_(\d+)_masks\.csv$", csv_file.name)
-            if not m:
-                continue
-            cid = int(m.group(1))
-            try:
-                df = pd.read_csv(csv_file)
-                rows = df[df["time_point"] == local_t]
-                if rows.empty:
-                    continue
-                rle = str(rows.iloc[0].get("rle_bf", "") or "")
-                if not rle.strip() or rle.lower() == "nan":
-                    rle = str(rows.iloc[0].get("rle_gfp", "") or "")
-                if not rle.strip() or rle.lower() == "nan":
-                    continue
 
+        for cid, rle in rles_dict.items():
+            if sequence and cid not in local2global:
+                continue
+            try:
                 nums = np.fromstring(rle.strip(), dtype=int, sep=' ')
                 starts = nums[0::2] - 1
                 ends = starts + nums[1::2]
@@ -299,9 +283,9 @@ class GTFramesService:
                     continue
                 vals, counts = np.unique(labels_here, return_counts=True)
                 best_lbl = int(vals[np.argmax(counts)])
-                identity = local2global.get(cid, cid)
-                display = format_cell_display_label(local2global.get(cid, cid))
-                gid_val = local2global.get(cid)
+                identity = local2global[cid] if sequence else cid
+                display = format_cell_display_label(identity)
+                gid_val = local2global.get(cid) if sequence else None
                 out.setdefault(best_lbl, (stable_color_key(identity), display, cid, gid_val))
             except Exception:
                 continue
@@ -408,6 +392,8 @@ class GTFramesService:
         tracked_union = np.zeros((H, W), dtype=bool)
         cell_draw_list = []
         rles_dict = self.get_film_cell_rles_at_t(exp, film, t_val)
+        is_seq_mode = bool(sequence)
+
         for cid, rle in rles_dict.items():
             try:
                 mask = validate_and_decode_rle(rle, H, W)
@@ -415,8 +401,18 @@ class GTFramesService:
                     continue
 
                 tracked_union |= (mask > 0)
-                identity = local2global.get(cid, cid)
-                # Global cell color (BGR)
+                if is_seq_mode:
+                    if cid not in local2global:
+                        # Unlinked local cell in sequence mode -> render as UNTRACKED / WHITE
+                        overlay[mask > 0] = (255, 255, 255)
+                        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                        cv2.drawContours(img_bgr, contours, -1, (255, 255, 255), 1)
+                        continue
+                    identity = local2global[cid]
+                else:
+                    identity = cid
+
+                # Global/Local cell color (BGR)
                 b, g, r = id_to_color(stable_color_key(identity))
                 display = format_cell_display_label(identity)
                 ys, xs = np.where(mask > 0)
@@ -491,6 +487,8 @@ class GTFramesService:
 
         # 1. Tracked cells from updated individual CSV masks
         rles_dict = self.get_film_cell_rles_at_t(exp, film, t_val)
+        is_seq_mode = bool(sequence)
+
         for cid, rle in rles_dict.items():
             try:
                 mask = validate_and_decode_rle(rle, H, W)
@@ -498,7 +496,16 @@ class GTFramesService:
                     continue
                 tracked_union |= (mask > 0)
 
-                identity = local2global.get(cid, cid)
+                if is_seq_mode:
+                    if cid not in local2global:
+                        # Unlinked local cell in sequence mode -> render boundary in pure WHITE
+                        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                        cv2.drawContours(rgba, contours, -1, (255, 255, 255, 180), 1)
+                        continue
+                    identity = local2global[cid]
+                else:
+                    identity = cid
+
                 b, g, r = id_to_color(stable_color_key(identity))
                 contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
                 cv2.drawContours(rgba, contours, -1, (int(b), int(g), int(r), 255), 2)
