@@ -35,7 +35,7 @@ const state = {
     localFilmId: null,
     isLocalEdit: false,
     linkageDetails: {},
-    cacheVer: 1,
+    cacheVer: Date.now(),
     maskOpacity: 0.40,
     isSpaceKeyDown: false
 };

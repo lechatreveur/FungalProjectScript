@@ -96,7 +96,9 @@ def get_frame_image():
     try:
         jpeg_bytes = frames_svc.render_frame_jpeg(exp, target_film, local_t, channel=channel)
         resp = Response(jpeg_bytes, mimetype="image/jpeg")
-        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
         return resp
     except Exception as e:
         return jsonify({"error": f"Failed to render frame: {e}"}), 500
@@ -125,7 +127,9 @@ def get_population_frame():
     try:
         jpeg_bytes = frames_svc.render_population_frame_jpeg(exp, target_film, local_t, sequence=sequence)
         resp = Response(jpeg_bytes, mimetype="image/jpeg")
-        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
         return resp
     except Exception as e:
         return jsonify({"error": f"Failed to render population frame: {e}"}), 500
@@ -155,7 +159,9 @@ def get_frame_boundaries():
     try:
         png_bytes = frames_svc.render_boundary_png(exp, target_film, local_t, sequence=sequence)
         resp = Response(png_bytes, mimetype="image/png")
-        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
         return resp
     except Exception as e:
         return jsonify({"error": f"Failed to render boundaries: {e}"}), 500
