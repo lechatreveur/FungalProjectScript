@@ -100,10 +100,12 @@ looks the same in `tracking_corrector` (which `manual_correction_tool.py` wraps)
   boundary overlays must be drawn from updated per-cell mask CSVs
   (`TrackedCells_<film>/cell_<cid>_masks.csv`), never directly from raw Cellpose
   masks (`*_seg.tif`).
-- **White untracked segments.** Any segmentation region in `_seg.tif` that is not
-  part of an active tracked global cell is rendered in pure **WHITE**
-  (`(255, 255, 255)` fill and outline) to distinguish unassigned debris from
-  tracked cells.
+- **White unassigned / untracked segments.** Any segment that is not part of an
+  active tracked global cell is rendered in pure **WHITE** (`(255, 255, 255)`
+  fill and 1px outline) with no text label:
+  - Local cells in `TrackedCells_<film>` unmapped to a global cell in sequence mode
+    (never fall back to local ID color/label).
+  - Residual Cellpose segmentation regions in `_seg.tif` with no tracked cell.
 - Status colors (QC good/bad/mistracked, save state) are a separate axis and
   stay as they are; the per-cell identity color is an addition, not a
   replacement.

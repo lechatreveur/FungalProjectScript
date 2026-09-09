@@ -552,6 +552,7 @@ Every visualization across all review tools (`tracking_corrector`, `ground_truth
    - A cell's color is a strictly deterministic function of its **stable identity**:
      - For multi-film linked sequences: `global_cell_id` (e.g. `"5_1_N1_F0_cell_50"`).
      - For single-film local views: `local_cell_id` (integer).
+   - In sequence mode, **only cells linked to an active `global_cell_id` in `sequence_linkage.json` receive a color hue and label badge**. Any local cell in `TrackedCells_<film>` not mapped to a global cell must **never fall back to its local cell ID**; it must be treated as unassigned and rendered as white (see Rule 4).
    - Never key color on transient UI indices (render order, pagination index, table row ID, or `new_cell_id` row numbers).
    - String global IDs are hashed to 32-bit unsigned integers using **FNV-1a 32-bit**:
      `h = 0x811C9DC5`, `h = ((h ^ byte) * 0x01000193) % 2^32`.
@@ -568,6 +569,10 @@ Every visualization across all review tools (`tracking_corrector`, `ground_truth
    - Population frames and boundary overlays must always be rendered from the updated per-cell mask CSV files (`TrackedCells_<film>/cell_<cid>_masks.csv`), never directly from raw Cellpose masks (`*_seg.tif`).
    - Any manual or algorithmic corrections saved to `cell_<cid>_masks.csv` must immediately reflect in the population overlays.
 
-4. **White Rendering for Untracked / Background Segments**:
-   - Any segment in the raw segmentation `*_seg.tif` that is not part of an active tracked global cell is unassigned debris/background and must be rendered in pure **WHITE** (`(255, 255, 255)` fill and outline) to avoid false color attribution.
+4. **White Rendering for Untracked / Unassigned Segments**:
+   - Any segment that is not part of an active tracked global cell is unassigned and must be rendered in pure **WHITE** (`(255, 255, 255)` fill and 1px white boundary outline) with **no text label**:
+     - Local cells in `TrackedCells_<film>` that are unlinked / unmapped to a `global_cell_id` in sequence mode.
+     - Residual Cellpose segmentation regions in `_seg.tif` that have no active tracked cell behind them.
+   - White rendering prevents false color attribution and immediately alerts the curator to unlinked or extraneous segments.
+
 
