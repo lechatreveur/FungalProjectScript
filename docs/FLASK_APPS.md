@@ -80,20 +80,30 @@ silent refactor — it touches the write path for the shared dataset.
 
 Presentation invariants that every app's frontend must honor so the same cell
 looks the same in `tracking_corrector` (which `manual_correction_tool.py` wraps),
-`ground_truth_corrector`, and `septum_alignment_board`.
+`ground_truth_corrector`, and `septum_alignment_board` (referenced by
+[PROJECT_POLICY.md](PROJECT_POLICY.md) P12).
 
 - **Stable per-cell color.** A cell's display color is a deterministic function
-  of its **stable identity** — `global_cell_id` for a linked cell,
-  `(film, local_cell_id)` for a single-film cell — hashed to a hue. It must
+  of its **stable identity** — `global_cell_id` (string hashed via FNV-1a 32-bit)
+  for a linked cell, or `local_cell_id` (integer) for a single-film cell — mapped
+  to hue via Knuth's multiplicative hash (`(id * 2654435761) % (2**32)`). It must
   **not** depend on render order, gallery or page position, row index, or
   `new_cell_id` / table-row-id (a flat row index into `id_map_unaligned.csv`,
   not an identity — see [COORDINATE_SYSTEMS.md](COORDINATE_SYSTEMS.md) and the
   M156 strip drift). Consequence: the same cell keeps its color across frames,
   re-renders, pagination, and across all three apps.
-- **One shared color helper**, not a copy per app — the "don't fork" rule
-  applies to shared frontend logic too. There is no such helper today (colors
-  are currently all status-driven: good / bad / mistracked / corrected); adding
-  one introduces the shared function.
+- **Frontend BigInt hash calculation.** To ensure byte-level RGB identity between
+  server-rendered masks (`id_to_color` in Python) and client-side outlines/swatches
+  (`idToColor` in JS), JavaScript implementations must compute the Knuth hash
+  using `BigInt`: `Number((BigInt(id >>> 0) * 2654435761n) % 4294967296n)`.
+- **Individual cell masks as ground truth overlay source.** Population frames and
+  boundary overlays must be drawn from updated per-cell mask CSVs
+  (`TrackedCells_<film>/cell_<cid>_masks.csv`), never directly from raw Cellpose
+  masks (`*_seg.tif`).
+- **White untracked segments.** Any segmentation region in `_seg.tif` that is not
+  part of an active tracked global cell is rendered in pure **WHITE**
+  (`(255, 255, 255)` fill and outline) to distinguish unassigned debris from
+  tracked cells.
 - Status colors (QC good/bad/mistracked, save state) are a separate axis and
   stay as they are; the per-cell identity color is an addition, not a
   replacement.

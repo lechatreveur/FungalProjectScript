@@ -3,7 +3,7 @@
 Version 1. Effective 2026-09-02. Version 1.1 (2026-09-02) adds P4–P6.
 Version 1.2 (2026-09-02) adds P7. Version 1.3 (2026-09-02) adds P10.
 Version 1.4 (2026-09-02) adds P9. Version 1.5 (2026-09-02) adds P11.
-Version 1.6 (2026-09-02) adds P8.
+Version 1.6 (2026-09-02) adds P8. Version 1.7 (2026-09-08) adds P12.
 
 The working policy for changes to this repository, whether made by a person or an
 AI agent. [AGENTS.md](../AGENTS.md) is the entry router; this file is the
@@ -26,6 +26,7 @@ rulebook. It currently covers:
   [EXPERIMENTS.md](EXPERIMENTS.md)).
 - **P11 — Sharing hygiene** (reference doc:
   [SHARING_HYGIENE.md](SHARING_HYGIENE.md)).
+- **P12 — Cell color coding and segmentation overlay policy** (below).
 
 Cross-model verification (using an external CLI agent as an independent
 reviewer) is planned for version 2 and is not policy yet.
@@ -538,3 +539,35 @@ committed (a JGI session cookie, a password-on-command-line) are in
   should be centralized in one gitignored place rather than scattered.
 - Purging a committed secret from git history rewrites shared branches — that is
   the owner's decision, not an automatic step.
+
+---
+
+## P12 — Cell color coding and segmentation overlay policy
+
+Every visualization across all review tools (`tracking_corrector`, `ground_truth_corrector`, `septum_alignment_board`, manifold explorer dashboards, and population movies) must adhere to strict deterministic color identity, overlay provenance, and unassigned segment rendering rules.
+
+### Rules
+
+1. **Deterministic Color Identity Mapping**:
+   - A cell's color is a strictly deterministic function of its **stable identity**:
+     - For multi-film linked sequences: `global_cell_id` (e.g. `"5_1_N1_F0_cell_50"`).
+     - For single-film local views: `local_cell_id` (integer).
+   - Never key color on transient UI indices (render order, pagination index, table row ID, or `new_cell_id` row numbers).
+   - String global IDs are hashed to 32-bit unsigned integers using **FNV-1a 32-bit**:
+     `h = 0x811C9DC5`, `h = ((h ^ byte) * 0x01000193) % 2^32`.
+   - The integer key maps to hue using **Knuth's multiplicative hash**:
+     `val = (key * 2654435761) % 2^32`, `h = (val % 360) / 360.0`, with fixed saturation `s = 0.8` and value `v = 0.95`.
+
+2. **Frontend-Backend Exact RGB Parity (The BigInt Rule)**:
+   - In JavaScript, multiplying 32-bit unsigned integers (such as `key * 2654435761`) exceeds standard `Number` safe integer precision without BigInt, causing floating-point rounding divergence from Python's 64-bit integer arithmetic.
+   - All client-side JavaScript color functions (`static/js/color.js`) must calculate the hash using explicit `BigInt` operations:
+     `Number((BigInt(id >>> 0) * 2654435761n) % 4294967296n)`.
+   - Client-side outlines, timeline swatches, and cell selection buttons must match server-rendered mask overlays byte-for-byte in RGB.
+
+3. **Individual Masks as Authoritative Ground Truth Overlays**:
+   - Population frames and boundary overlays must always be rendered from the updated per-cell mask CSV files (`TrackedCells_<film>/cell_<cid>_masks.csv`), never directly from raw Cellpose masks (`*_seg.tif`).
+   - Any manual or algorithmic corrections saved to `cell_<cid>_masks.csv` must immediately reflect in the population overlays.
+
+4. **White Rendering for Untracked / Background Segments**:
+   - Any segment in the raw segmentation `*_seg.tif` that is not part of an active tracked global cell is unassigned debris/background and must be rendered in pure **WHITE** (`(255, 255, 255)` fill and outline) to avoid false color attribution.
+
