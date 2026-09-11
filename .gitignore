@@ -54,3 +54,6 @@ lineage_model*/
 tracker_checkpoints*/
 segment-anything-2/
 
+
+# Report figures are part of the docs and travel with them (overrides *.png above)
+!docs/figures/**
