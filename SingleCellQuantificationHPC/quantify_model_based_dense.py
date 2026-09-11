@@ -73,11 +73,18 @@ class FrameCache:
         return self.d[t]
 
     def scale(self, film):
-        """99.5th / 1st percentile of the film's first frame, as stage 4 expects."""
-        img = self.get(film, 0)
-        if img is None:
+        """Film intensity scale, computed exactly as `FindMovieMaxMin` in
+        `quantify_cell.py` does it: pool every 10th pixel of EVERY frame in the
+        film, then take the 99.5th and 1st percentiles.  Pooling matters — using
+        the first frame alone ignores photobleaching and shifts the scale."""
+        frames = sorted((self.exp / film / f"Frames_{film}").glob(f"{film}_t_*_c_0.tif"))
+        if not frames:
             return None, None
-        px = img.ravel()[::10]
+        px = []
+        for p in frames:
+            img = imread(str(p))
+            px.append(img.ravel()[::10])
+        px = np.concatenate(px)
         return float(np.percentile(px, 99.5)), float(np.percentile(px, 1))
 
 
