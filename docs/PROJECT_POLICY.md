@@ -5,8 +5,8 @@ Version 1.2 (2026-09-02) adds P7. Version 1.3 (2026-09-02) adds P10.
 Version 1.4 (2026-09-02) adds P9. Version 1.5 (2026-09-02) adds P11.
 Version 1.6 (2026-09-02) adds P8. Version 1.7 (2026-09-08) adds P12.
 Version 1.8 (2026-09-09) adds P13. Version 1.9 (2026-09-10) adds P14.
-Version 1.10 (2026-09-11) adds P15 and revises P14 stage 3 for model-based
-dense tracking.
+Version 1.10 (2026-09-11) adds P15, revises P14 stage 3 for model-based dense
+tracking, and adds the development-report location rule to P3.
 
 The working policy for changes to this repository, whether made by a person or an
 AI agent. [AGENTS.md](../AGENTS.md) is the entry router; this file is the
@@ -282,6 +282,37 @@ seed/params, date.**
   do not delete them to tidy up.
 - One canonical location per current artifact. Use routers and cross-references
   rather than copies.
+
+### Development reports
+
+A development report is the narrative provenance for a block of work: what was
+attempted, what the evidence showed, what was wrong, and which artifacts back
+each claim. They are the record a later reader reconstructs a decision from, so
+they have one home and one naming scheme.
+
+- **Location: `docs/development_reports/`.** One folder, no exceptions. Reports
+  do not live at the repository root, in `docs/` alongside the reference docs, or
+  beside the code they describe.
+- **Name: `development_report_<YYYY_MM_DD>_<topic>.md`**, the date being when the
+  work was done, the topic a short slug. The topic is required when a date
+  already has a report, and is recommended always — two reports from one day are
+  otherwise indistinguishable in a listing.
+- **Figures: `docs/development_reports/figures/<topic>/`**, referenced from the
+  report by relative path so the report and its figures move together. This is
+  the one place `*.png` is exempt from `.gitignore`.
+- **Every report is committed.** A report that exists only as an uncommitted
+  working-tree file is not a record — it is invisible to anyone else and to the
+  history. Commit it with the work it describes.
+- **Index it in [EXPERIMENTS.md](EXPERIMENTS.md)** against the experiment it
+  concerns (P8), so the ledger is the way in.
+- **Reports are append-only records, not living documents.** A later finding that
+  changes a report's conclusion goes in a new report, or in a clearly marked
+  correction section inside the old one that states what was wrong. Do not
+  silently rewrite a conclusion, and do not delete a superseded report — keep it
+  with its status, as with any other artifact above.
+- **State the comparison scope.** When a report's headline number is not
+  comparable with an earlier one — the measured set changed, or the acceptance
+  reference changed — say so at the headline, not in a footnote.
 
 ### Amendment
 
@@ -750,7 +781,7 @@ the secondary number improves.
   input of the next is at least L4: benchmark against the curated set, compare
   to the current production artifact, and record the result (P3, P8).
 
-Reference: `docs/development_report_2026_09_08.md` §6 (dense all-frame
+Reference: `docs/development_reports/development_report_2026_09_08.md` §6 (dense all-frame
 strategy), `advanced_backward_bayesian_tracker.py` (stage 1),
 `train_cellposesam.py` + [TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md)
 (stage 2), P13 (stage 3 acceptance criterion).

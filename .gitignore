@@ -56,4 +56,4 @@ segment-anything-2/
 
 
 # Report figures are part of the docs and travel with them (overrides *.png above)
-!docs/figures/**
+!docs/development_reports/figures/**
