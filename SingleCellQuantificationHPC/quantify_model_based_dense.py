@@ -50,11 +50,12 @@ for _p in (str(_HERE), str(_HERE.parent)):
 from quant_helpers import quantify_one_object
 from Cell_tracking_functions import rle_decode
 
-_SCRATCH = Path("/Users/user/Documents/Python_Scripts/FungalProjectScript/"
-                "SingleCellQuantificationHPC/scratch")
+# Data stays on the external SSD, never the system disk (P4).
+_SSD_OUT = Path("/Volumes/X10 Pro/FungalProject_Outputs/model_based_dense_tracking/"
+                "2026_08_28_M160")
 DEFAULT_EXP = Path("/Volumes/X10 Pro/Movies/2026_08_28_M160")
-DEFAULT_IN = _SCRATCH / "model_based_dense_out"
-DEFAULT_OUT = _SCRATCH / "model_based_quant_out"
+DEFAULT_IN = _SSD_OUT / "dense_masks"
+DEFAULT_OUT = _SSD_OUT / "quant"
 MODEL_ONLY = {"NO_SEG", "BOTH_MISSED"}
 
 

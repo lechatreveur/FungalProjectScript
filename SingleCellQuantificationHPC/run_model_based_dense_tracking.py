@@ -33,13 +33,17 @@ for _p in (str(_HERE), str(_HERE.parent)):
 import model_based_dense_tracking as M
 
 DEFAULT_EXP = Path("/Volumes/X10 Pro/Movies/2026_08_28_M160")
-# The QC work queue and the stage-1 ABBT benchmark live in the main checkout's
-# scratch tree, which is not version-controlled, so resolve them there.
+# Inputs: the QC work queue and the stage-1 ABBT benchmark live in the main
+# checkout's scratch tree, which is not version-controlled.
 _SCRATCH = Path("/Users/user/Documents/Python_Scripts/FungalProjectScript/"
                 "SingleCellQuantificationHPC/scratch")
-DEFAULT_OUT = _SCRATCH / "model_based_dense_out"
 DEFAULT_WQ = _SCRATCH / "work_queue_all_statuses.csv"
 DEFAULT_SEED = _SCRATCH / "bayesian_tracker_benchmark_307.csv"
+
+# Outputs go to the external SSD, never the system disk (P4).  Mask series for a
+# whole experiment run to hundreds of megabytes and the boot volume has no room.
+_SSD_OUT = Path("/Volumes/X10 Pro/FungalProject_Outputs/model_based_dense_tracking")
+DEFAULT_OUT = _SSD_OUT / "2026_08_28_M160" / "dense_masks"
 SEQS = ["5_1_N1_F0", "5_1_N1_F1", "5_1_N1_F2"]
 
 

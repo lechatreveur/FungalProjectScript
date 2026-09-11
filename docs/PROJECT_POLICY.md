@@ -361,6 +361,28 @@ already read by `tracking_corrector/config.py`. The `FUNGAL_*` names are the
 convention for new code; wire them into a component's config as that component
 next needs them rather than in one sweep.
 
+### Where generated data lives
+
+**Generated data never lands on the system disk.** The workstation boot volume
+runs at or near 100% (460 GB, single-digit GB free), so a run that writes there
+does not merely take up room — it fails, and it can take unrelated work down
+with it.
+
+- **Outputs go under `FUNGAL_OUTPUTS_ROOT`**, default
+  `/Volumes/X10 Pro/FungalProject_Outputs/<module>/<experiment>/`. That path
+  already exists in the table above; use it rather than inventing a new one.
+- **`scratch/` inside the repository is for code and small inputs only** —
+  prototypes, work queues, benchmark CSVs, notes. Mask series, quantification
+  tables, movies, strips, checkpoints and run logs do not belong there, however
+  convenient it is during development.
+- **Set the output path before the first long run, not after.** Moving hundreds
+  of megabytes mid-run means killing the job and resuming it.
+- This was learned the hard way on 2026-09-11: the stage-3 and stage-4 runs for
+  M160 were written to `SingleCellQuantificationHPC/scratch/`, and the stage-4
+  run died at cell 388 of 605 with `OSError: [Errno 28] No space left on
+  device`. The run's own footprint was about 100 MB — it was not the cause of
+  the full disk, but it was the casualty, and it had no business being there.
+
 The current physical mount points per machine (workstation, NAS via SMB, HPC via
 SSH) are documented in
 [SingleCellQuantificationHPC/COWORKER_GUIDE.md](../SingleCellQuantificationHPC/COWORKER_GUIDE.md).
