@@ -4,6 +4,9 @@ Version 1. Effective 2026-09-02. Version 1.1 (2026-09-02) adds P4–P6.
 Version 1.2 (2026-09-02) adds P7. Version 1.3 (2026-09-02) adds P10.
 Version 1.4 (2026-09-02) adds P9. Version 1.5 (2026-09-02) adds P11.
 Version 1.6 (2026-09-02) adds P8. Version 1.7 (2026-09-08) adds P12.
+Version 1.8 (2026-09-09) adds P13. Version 1.9 (2026-09-10) adds P14.
+Version 1.10 (2026-09-11) adds P15 and revises P14 stage 3 for model-based
+dense tracking.
 
 The working policy for changes to this repository, whether made by a person or an
 AI agent. [AGENTS.md](../AGENTS.md) is the entry router; this file is the
@@ -27,6 +30,10 @@ rulebook. It currently covers:
 - **P11 — Sharing hygiene** (reference doc:
   [SHARING_HYGIENE.md](SHARING_HYGIENE.md)).
 - **P12 — Cell color coding and segmentation overlay policy** (below).
+- **P13 — Pole completeness for polarity-site quantification** (below).
+- **P14 — Pipeline stage order and per-stage objective priority** (below).
+- **P15 — Canonical modules: which script to use, and the copy-to-modify rule**
+  (below).
 
 Cross-model verification (using an external CLI agent as an independent
 reviewer) is planned for version 2 and is not policy yet.
@@ -87,7 +94,9 @@ than picking the convenient rule.
   fallback (per-cell → global film interval → skip); multi-film state keyed by
   `(film_name, cell_id)`; `skimage` `regionprops.orientation` measured from the
   row axis, not horizontal; manifold reference scaling and UMAP fit computed on
-  the reference experiment only, mutants projected with `.transform()`.
+  the reference experiment only, mutants projected with `.transform()`;
+  pole-clipped masks (a centroid-correct mask that truncates a pole silently
+  drops the pixels polarity-site quantification depends on — see P13).
 - **Hygiene.** No credentials, host addresses, cookies, or payload dumps in
   commits. Environment-specific absolute paths belong in config or a resolver,
   not hard-coded into new scripts.
@@ -175,10 +184,13 @@ serialized output. State the tolerance used.
 **L4 — Scientific validation.** For a claim about a measurement or biological
 quantity, name the ground truth and the metric. Tracking: IoU / survival rate /
 final-frame IoU against the curated set (cf.
-`SingleCellQuantificationHPC/tracker_comparison_summary.md`). Septum
-classification: label-count parity with the GUI and per-interval agreement on a
-held-out film. Division timing: fit residuals against manually marked events.
-Store the full per-item result (per cell, per frame), not just the aggregate.
+`SingleCellQuantificationHPC/tracker_comparison_summary.md`), **and pole-span
+agreement vs. the phase-local expected span for any track feeding polarity /
+pole-intensity analysis (P13) — centroid-continuous is necessary, not
+sufficient.** Septum classification: label-count parity with the GUI and
+per-interval agreement on a held-out film. Division timing: fit residuals
+against manually marked events. Store the full per-item result (per cell, per
+frame), not just the aggregate.
 
 **L5 — Method-defining review.** Not settled by a passing smoke test. These need
 the owner's reasoning and sign-off:
@@ -510,9 +522,31 @@ in [TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md).
   curated ground truth, compare against the current production checkpoint on the
   same benchmark, and get owner sign-off for any change to augmentation, label
   semantics, decision threshold, or input normalization.
-- **Checkpoint relocation between SSD / NAS / repo follows P5:** back up, keep
-  the previous one until the new one is benchmarked, record the move.
-- Superseded checkpoints stay with their provenance and their benchmark numbers.
+- **Hardware resource limits & MPS memory caps (Local Workstations):**
+  - PyTorch MPS unified memory on Apple Silicon does not enforce a safe ceiling by
+    default and can balloon into tens of gigabytes of virtual swap (>28 GB), causing
+    system freeze or Out-Of-Memory (OOM) failure.
+  - Any local MPS training pipeline (`train_cellposesam.py`, representation-learning
+    scripts) must enforce an explicit memory cap via
+    `torch.mps.set_per_process_memory_fraction(fraction)` calibrated against Metal's
+    `torch.mps.recommended_max_memory()`.
+  - For an 18 GB workstation, cap MPS at ~10.0 GiB (~75% of device working limit),
+    leaving at least 6–8 GB of physical RAM free for the OS and IDE, while
+    comfortably fitting ViT multi-head attention peaks (~6.8 GiB).
+  - Do not set uncalibrated `PYTORCH_MPS_HIGH_WATERMARK_RATIO` below peak attention
+    requirements, which causes artificial `MPS backend out of memory` errors.
+  - Enforce bounded working set churn: tile size `bsize=256`, `batch_size=1`, and
+    `--nimg_per_epoch` sub-sampling (e.g. 25 images/epoch) rather than loading
+    unbounded image lists into memory simultaneously.
+- **Resume lineage & in-place immutability:**
+  - Resumed runs must record `resumed_from` in the `<checkpoint>.provenance.json`
+    sidecar pointing to the parent checkpoint.
+  - Never overwrite the parent checkpoint in-place. Resumed artifacts must be saved
+    with a distinct target name (e.g., `<name>_resumed`).
+  - Output path discipline: avoid framework-level directory nesting (e.g., Cellpose
+    automatically appends `models/` to `save_path`). Ensure checkpoints mirror
+    cleanly to `models/` and `~/.cellpose/models/`.
+- **Superseded checkpoints stay with their provenance and their benchmark numbers.**
 
 ---
 
@@ -574,5 +608,251 @@ Every visualization across all review tools (`tracking_corrector`, `ground_truth
      - Local cells in `TrackedCells_<film>` that are unlinked / unmapped to a `global_cell_id` in sequence mode.
      - Residual Cellpose segmentation regions in `_seg.tif` that have no active tracked cell behind them.
    - White rendering prevents false color attribution and immediately alerts the curator to unlinked or extraneous segments.
+
+---
+
+## P13 — Pole completeness for polarity-site quantification
+
+Polarity-site dynamics (pole cap intensity, pole-to-pole oscillation, new-end
+take-off) are measured **at the two poles of the _S. pombe_ rod**. A per-frame
+mask that is centroid-correct but **pole-clipped** silently drops the exact
+pixels the measurement depends on: a truncated pole reads as "no polarity
+signal" rather than "signal not captured." Mask quality for any pole / polarity
+analysis is judged by **pole inclusion**, not by IoU or centroid continuity
+alone.
+
+Context: this is the recurring failure mode behind the M156 vertical-strip
+rotation bug, the `recover_missegmented_poles.py` tooling, and the dense
+retracking work — Cellpose under-segments a pole for 1–3 frames, or the tracker
+picks a `_seg.tif` label that is itself clipped.
+
+### Rules
+
+- **Both physical poles must be present in every per-frame mask** used for
+  polarity, pole-intensity, cell-length, or division-geometry quantification.
+  Centroid-continuous and IoU-passing are necessary, not sufficient.
+- **Pole completeness is an L4 check (P2).** Validate a retracked / re-segmented
+  / pole-recovered mask series against the **phase-local expected major-axis
+  span**, interpolated from the curated keyframes and good neighbour frames —
+  **phase-aware**: never interpolate pre-division mother geometry into
+  post-division daughter frames or vice versa (P6, and
+  `interpolate_expected_geometry` in `recover_missegmented_poles.py`). A frame
+  whose span is `< ~0.85 ×` the expected phase-local span is flagged
+  **pole-short** and is excluded from polarity quantification until repaired.
+- **Repair order** (`recover_missegmented_poles.py`): (1) adopt a fully
+  overlapping `_seg.tif` label of the right length; (2) fuse an adjacent split
+  `_seg.tif` fragment lying beyond the truncated tip along `u_long`; (3) extrude
+  a minor-axis-width brush along `u_long` to the expected tip. A frame that none
+  of these fixes is **marked, not silently shipped**.
+- **Dense in-film retracking** (the all-frame plan, and any gap-fill against
+  `_seg.tif`) runs the pole-completeness stage on every re-linked frame.
+  Recovered masks carry a `composition` / provenance tag recording how the poles
+  were obtained: `single`, `fuse`, `extrude`, `pole_short`, `interp`.
+- **Downstream artifacts inherit pole clipping.** Vertical strips
+  (`generate_M*_strips.py`), Video-AE crops, and manifold features are computed
+  from the mask; a pole-short mask propagates a truncated crop into every
+  representation built on it. Regenerate these after a pole-recovery pass.
+- **The segmentation-model target is pole inclusion.** A Cellpose checkpoint
+  trained or promoted under P10 is benchmarked on **pole-span agreement vs. the
+  curated keyframes**, not mask IoU alone. A model that clips poles is not an
+  improvement even at higher IoU.
+- Superseded and pole-short masks keep their status (P3) — excluded from
+  polarity analysis, not deleted.
+
+Reference: `recover_missegmented_poles.py` (expected-geometry interpolation,
+truncation detection, three-strategy recovery), `DEVELOPMENT_NOTES.md`
+(pole-recovery and strip-rotation history), `COORDINATE_SYSTEMS.md` (phase and
+frame spaces).
+
+---
+
+## P14 — Pipeline stage order and per-stage objective priority
+
+The single-cell pipeline has a **fixed stage order**, and each stage has **one
+primary objective**. Work that optimises a later stage's metric before its
+prerequisite stage is settled is wasted, and work that optimises a stage's
+*secondary* objective at the cost of its primary one is a regression even when
+the secondary number improves.
+
+### Canonical stage order
+
+1. **GTC + ABBT — keyframe curation and quick QC.**
+   Curate the keyframe backbone in the ground-truth corrector; run the Advanced
+   Backward Bayesian Tracker over it to establish per-cell identity, inter-film
+   linkage, sister assignment, and **division timing at keyframe resolution**.
+   Output of this stage is authoritative for everything downstream.
+2. **Segmentation — train Cellpose on the curated keyframes, then segment every
+   timeframe.** Model training follows P10; promotion follows P10 §3 and is
+   benchmarked on pole-span agreement (P13), not IoU alone.
+3. **Model-based dense tracking — all-frame decision against an explicit shape
+   model** built from the stage-1 keyframes, applied to the stage-2 `_seg.tif`
+   series. Canonical module in P15.
+4. **Quantification — polarity-site dynamics** on the dense mask series.
+
+### Rules
+
+- **Do not reorder the stages.** In particular, dense tracking runs *after*
+  resegmentation, not before. A tracker can only choose among the labels
+  segmentation hands it; it cannot recover a cell that was never segmented.
+  Attempting to compensate for poor segmentation inside the tracker produces
+  synthetic masks that are plausible-looking and wrong.
+- **Keyframes are read-only from stage 2 onward.** They are the product of
+  stage 1 and represent days of curation. No later stage rewrites a keyframe
+  mask; a keyframe that appears wrong is escalated to GTC, not patched in place.
+- **Stage 3 objective priority is fixed:**
+  1. **Primary — pole inclusion, and therefore major-axis length stability.**
+     Every per-frame mask must contain both physical poles (P13). The expected
+     length is **inferred from the curated keyframes and the interval anchors**,
+     never from the interior frames being repaired. This is the metric dense
+     tracking is tuned, accepted, and reported on.
+  2. **Secondary — dense division timeframe.** Division timing is *already
+     established* at keyframe resolution by stage 1 (ABBT: 98.74% exact,
+     99.37% within ±1 keyframe over 316 curated cells). Refining `t*` to the
+     individual frame is a convenience for phase-splitting, not a deliverable.
+- **A low-confidence dense `t*` defers to the stage-1 keyframe call.** When the
+  dense localiser's confidence is low or its QC flags fire, use the keyframe
+  division interval rather than emitting a shaky per-frame `t*`. Never trade
+  pole completeness for a sharper `t*`.
+- **Never derive expected geometry from unvalidated interior frames.** Frames
+  whose length is a merge-scale outlier against the robust interval median —
+  including *canonical* frames that were never flagged, because their RLE is
+  neither empty nor duplicated — are excluded from the expected-geometry basis
+  and from any write-back into it. Without this, one sister-fusion frame sets
+  the expected length for its whole neighbourhood and the pole-recovery
+  machinery faithfully extends every real cell to the fused scale.
+- **The expected shape is a model, not an accumulation.** Stage 3 carries an
+  explicit per-cell shape — two pole tips, a centre, a width and a bend angle —
+  built from the two bracketing curated keyframes. Every per-frame mask is a
+  decision against that shape, not the product of a chain of repairs.
+- **Length is anchored; only the angle may be fitted.** Arm lengths and width
+  derive solely from curated keyframes and from frames the tracker accepted as
+  GOOD. No other frame writes back into the reference. The bend angle may be
+  fitted per frame within a bounded window, because cells bend and twist through
+  division and the keyframes cannot predict it.
+- **Tip presence is not sufficient evidence.** A segment containing both expected
+  tips is accepted only if its span is also within `1.25 ×` the expected span. A
+  fused blob contains both of our tips *and* a whole neighbour, so the tip test
+  alone silently passes fusions.
+- **Every branch output is length-checked, in both directions.** Any branch that
+  adds pixels is rejected if the result exceeds `1.25 ×` expected; any branch that
+  removes pixels is rejected if the result falls below `0.75 ×` expected. The two
+  failure modes of this family are the unbounded graft and the over-eager cut, and
+  both have occurred.
+- **Every interior frame is decided.** There is no pass-through category, so no
+  frame can be emitted without having been inspected.
+- **Report stage 3 as spans-in-band first**, over *all* emitted frames with
+  nothing excluded, with the GOOD-branch share and the branch histogram alongside.
+  Frames carrying no image evidence (`NO_SEG`, `BOTH_MISSED`) are counted and
+  reported separately, because they are model output and must be excluded or
+  flagged in stage 4 (P13). Division timing is reported as agreement with stage 1,
+  not as an independent accuracy claim.
+- **Stage boundaries are P2 checkpoints.** Promoting a stage's output to the
+  input of the next is at least L4: benchmark against the curated set, compare
+  to the current production artifact, and record the result (P3, P8).
+
+Reference: `docs/development_report_2026_09_08.md` §6 (dense all-frame
+strategy), `advanced_backward_bayesian_tracker.py` (stage 1),
+`train_cellposesam.py` + [TRAINING_CHECKLIST.md](TRAINING_CHECKLIST.md)
+(stage 2), P13 (stage 3 acceptance criterion).
+
+---
+
+## P15 — Canonical modules: which script to use, and the copy-to-modify rule
+
+### Why this exists
+
+Several scripts in this repository do superficially the same job, and the
+superseded ones still run without error. Choosing the wrong one produces numbers
+that look plausible and are **not comparable** with the rest of the pipeline.
+
+This is not hypothetical. On 2026-09-11 the model-based dense masks were first
+quantified with `ImageQuantification` from `Image_quantification_functions.py` —
+the pre-1-channel routine — instead of `quantify_one_object`, which is what
+`one_cell_quantification_1CH.py` actually calls. Every row came out populated and
+sane-looking, while silently omitting the septum pattern recognition and the
+two-half split that the production path emits for every frame.
+
+**Before running or extending a stage, look up its canonical module here. Do not
+infer it from a filename.**
+
+### The registry
+
+#### Stage 1 — keyframe curation and quick QC
+
+| Module | Method |
+| :--- | :--- |
+| `SingleCellQuantificationHPC/ground_truth_corrector/` (**GTC**, package) | Flask app for human curation of the keyframe backbone. Serves keyframe images with per-cell mask overlays, takes mask and identity corrections, and writes the canonical keyframes plus `sequence_linkage.json` (per-sequence film list and the global-cell → per-film local-id table). Shared-core contract in P9; colour and overlay rules in P12. Authoritative for everything downstream. |
+| `SingleCellQuantificationHPC/advanced_backward_bayesian_tracker.py` (**ABBT**) | Refined hard-EM backward Bayesian tracker over the curated keyframe backbone. Runs backward from the last keyframe with hypothesis-conditioned cleavage bisection, phase-aware geometry interpolation between keyframes, and sister-swap rectification. Establishes per-cell identity, inter-film linkage, sister assignment, and **division timing at keyframe resolution** (98.74% exact, 99.37% within ±1 keyframe over 316 curated cells). |
+
+#### Stage 2 — segmentation
+
+| Module | Method |
+| :--- | :--- |
+| `SingleCellQuantificationHPC/train_cellposesam.py` | Fine-tunes Cellpose-SAM on the curated keyframe image/mask pairs from stage 1. Reproducibility requirements and promotion gate in P10 and `TRAINING_CHECKLIST.md`; promotion is benchmarked on pole-span agreement (P13), not IoU alone. |
+| `SingleCellQuantificationHPC/batch_segment_ims_1CH.py` | Applies the promoted model to every timeframe of a film, writing `Masks_<film>/<film>_t_###_c_0_seg.tif` as labelled images. One label per object; no identity across frames. |
+
+#### Stage 3 — model-based dense tracking
+
+| Module | Method |
+| :--- | :--- |
+| `SingleCellQuantificationHPC/model_based_dense_tracking.py` | Carries an explicit per-cell shape — pole tips `E1` and `E2`, centre `C`, stroke radius `r`, bend angle `theta` — built from the two bracketing curated keyframes. The expected mask (`E1CE2`) is the union of two round-capped strokes `E1->C` and `E2->C`, each started one radius in from its tip so the cap lands on the tip. Each interior frame is a four-way decision against that shape: keep the segment, cut it against `E1CE2`, union it with a stroke to the missing tip, or fall back to `E1CE2`. Arm lengths and radius come only from curated keyframes and from frames accepted as GOOD; only the angle is fitted per frame. Non-dividing intervals are solved by bisection with good-gated anchor promotion; dividing intervals by a two-pass good-segment changepoint with a confidence gate. |
+| `SingleCellQuantificationHPC/run_model_based_dense_tracking.py` | Selects cells from the QC work queue by status, expands them through `sequence_linkage.json` to per-film keyframe intervals, runs the tracker, and writes one dense-mask CSV per (film, cell) plus a per-interval summary. Resumable; scratch-only output. |
+
+#### Stage 4 — quantification
+
+| Module | Method |
+| :--- | :--- |
+| `SingleCellQuantificationHPC/one_cell_quantification_1CH.py` | The per-cell entry point for 1-channel data. Resolves the channel (`--track_channel gfp` or `bf`), tracks or re-uses the mask series, and dispatches per frame to the routine below. Frame naming convention is `<film>_t_###_c_<channel>.tif` with no z index. |
+| `quant_helpers.py::quantify_one_object` | **The GFP main entry.** Per frame it (1) quantifies the segment as one object and emits a row; (2) runs touching-circles septum pattern recognition, saving the pattern scores and centre; (3) splits the mask by the minor-axis line through the pattern centre, pastes both halves back to the full frame, and quantifies each, emitting one row per half. So a parent call emits **three rows per frame**: `<cell_id>`, `<cell_id>_1`, `<cell_id>_2`. A single `ep_refs` dict, with independent `single` / `1` / `2` entries, is carried across the whole series so the EM endpoint references persist and pole 1 and pole 2 cannot swap identity mid-track. |
+| `bf_pattern.py::bf_pattern_only` | The brightfield path: septum pattern recognition without the GFP mixture fit. |
+| `Cell_tracking_functions.py::rle_encode` / `rle_decode` | The mask serialisation used by every mask CSV in the pipeline. Use these, not an ad-hoc encoder. |
+| `SingleCellQuantificationHPC/generate_cell_ids_1CH.py` + `generate_cell_jobs.py` | Build `cell_ids.txt` and the SLURM array scripts under `sb_scripts/`. Channel logic is in `PIPELINE_PROTOCOL.md` §4. |
+| `SingleCellQuantificationHPC/merge_cell_data.py` | Merges per-cell `cell_<id>_data.csv` into the per-film table. |
+| `SingleCellQuantificationHPC/pull_cells.sh` | Syncs quantification results back from the HPC. |
+
+Film intensity scale for the GFP path is `FindMovieMaxMin`: pool every 10th pixel
+of **every** frame of the film, then take the 99.5th and 1st percentiles. Using
+the first frame alone ignores photobleaching and shifts the scale.
+
+#### Superseded — do not use for 1-channel experiments
+
+| Module | Superseded by | Why |
+| :--- | :--- | :--- |
+| `quantify_cell.py` | `one_cell_quantification_1CH.py` | Two-digit frame indices, `Masks_*/GFP_seg` and `brightfield_seg` subfolders, a hard-coded HPC `sys.path`, and its own overlap-based re-tracking. Wrong layout for 1-channel data. |
+| `Image_quantification_functions.py::ImageQuantification` | `quant_helpers.py::quantify_one_object` | Emits one row per frame with no septum pattern and no two-half split. |
+| `scratch/dense_abbt_interval.py` | `model_based_dense_tracking.py` | Heuristic stage 3; retained as an evidence artifact for the 2026-09-11 dense-ABBT report, not as a runnable path. |
+
+A module listed as superseded stays in the tree as evidence (P3) and is not
+deleted. It is also not run.
+
+### The copy-to-modify rule
+
+Every module in the registry is a **reliable module**: downstream results and
+published numbers depend on it behaving exactly as it does today.
+
+- **Do not modify a registry module in place to explore, debug, or try an idea.**
+  This includes GTC, ABBT, the model-based dense tracker, and the stage-4
+  quantification modules.
+- **Work on a copy.** Copy the module into `scratch/` under a name that says what
+  it is and when it was taken, for example
+  `scratch/quantify_one_object_20260911_septum_test.py`. Modify and run the copy.
+- **Record the provenance** of the copy: the source path, the commit it was taken
+  at, and what is being tried (P3).
+- **Promotion back into the registry is a P2 L4 checkpoint** — benchmark against
+  the curated set, compare against the current production artifact, record the
+  result — and is an irreversible action under P5, so it needs a backup and an
+  explicit go-ahead.
+- **New capability goes in a new module**, not as a flag bolted onto a registry
+  module. The model-based dense tracker was added this way rather than by editing
+  `dense_abbt_interval.py`.
+- Experiment-dated scripts (`IAonNAS_<date>_*.py`, `quantify_M*.py`,
+  `generate_M*_strips.py`, `submit_array_M*.sh`) remain frozen records under P1
+  and are never modernised in place.
+
+### Changing this registry
+
+Adding, renaming, or superseding an entry is a policy change: update this table
+in the same commit that introduces the module, and say in the commit message
+which entry moved and why.
 
 
