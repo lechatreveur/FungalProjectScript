@@ -97,6 +97,46 @@ def touches_border(mask):
                 or mask[:, 0].any() or mask[:, -1].any())
 
 
+def keypoints(film):
+    return [0, 50, 100] if "FL" in film else [0, 20, 40]
+
+
+def add_keyframes(df, exp, film, lc, channel="FL"):
+    """Stage 3 emits interior frames only, so a film's trace is 98 frames, not
+    101. The three keyframes are curated stage-1 product and authoritative
+    (P14), so quantify them from the canonical masks and merge them in. Without
+    this every trace is the wrong length and the downstream trajectory loader,
+    which requires exactly 101, drops the cell."""
+    csv = Path(exp) / film / f"TrackedCells_{film}" / f"cell_{lc}_masks.csv"
+    if not csv.exists():
+        return df
+    kf = pd.read_csv(csv)
+    col = ("rle_gfp" if channel == "FL" and "rle_gfp" in kf.columns
+           and kf["rle_gfp"].dropna().any() else "rle_bf")
+    want = set(keypoints(film)) - set(df["time_point"].astype(int))
+    rows = []
+    for _, r in kf.iterrows():
+        t = int(r["time_point"])
+        if t not in want:
+            continue
+        v = str(r.get(col, ""))
+        if not v.strip() or v.lower() == "nan":
+            continue
+        rows.append(dict(
+            film=film, local_cid=lc, channel=channel,
+            K_a=np.nan, K_b=np.nan, time_point=t,
+            branch="KEYFRAME", good=True, theta=np.nan, theta_shift=0.0,
+            exp_span=np.nan, out_span=np.nan, seg_span=np.nan,
+            relinked=False, relink_rejected=False, intersect_rejected=False,
+            bridged=False, t_div=np.nan,
+            height=int(r.get("height", df.iloc[0]["height"])),
+            width=int(r.get("width", df.iloc[0]["width"])),
+            rle=v))
+    if not rows:
+        return df
+    return pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
+
+
 def quantify_cell(df, cache, gmax, gmin, plot_dir):
     """Mirrors the GFP branch of `one_cell_quantification_1CH.py`: one
     `quantify_one_object` call per frame, with a single `ep_refs` dict carried
@@ -161,6 +201,7 @@ def quantify_cell(df, cache, gmax, gmin, plot_dir):
 # stage-3 provenance.  A file missing any of them was written by an older code
 # path and must be regenerated rather than skipped.
 REQUIRED_COLS = ("pattern_score_raw", "split_n0", "stage3_branch", "pol1_int")
+MIN_FRAMES = 101   # a film's trace must be complete: interiors plus the 3 keyframes
 
 
 def _is_current(path):
@@ -175,10 +216,14 @@ def _is_current(path):
     if not set(REQUIRED_COLS) <= cols:
         return False
     try:
-        d = pd.read_csv(path, usecols=["error"])
+        d = pd.read_csv(path, usecols=["error", "time_point"])
     except Exception:
         return True
-    return not (d["error"].fillna("") != "").any()
+    if (d["error"].fillna("") != "").any():
+        return False
+    # A trace missing its keyframes is the wrong length and gets dropped
+    # downstream, so an older short file must be regenerated, not skipped.
+    return d["time_point"].nunique() >= MIN_FRAMES
 
 
 def _run_chunk(args):
@@ -202,6 +247,9 @@ def _run_chunk(args):
             if gmax is None:
                 failed += 1
                 continue
+            lc = int(df.iloc[0]["local_cid"])
+            df = add_keyframes(df, exp, film, lc,
+                               channel=str(df.iloc[0].get("channel", "FL")))
             rows = quantify_cell(df, cache, gmax, gmin,
                                  plot_dir=str(Path(out) / film / f"plots_{f.stem}"))
             if rows:

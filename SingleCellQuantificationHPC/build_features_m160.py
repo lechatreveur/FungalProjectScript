@@ -13,16 +13,25 @@ Chain (canonical modules, P15)
       -> cytoplasm-correct:  pol{1,2}_int_corr = pol{1,2}_int - cyt_int
       -> SingleCellDataAnalysis.signal_analysis.quantify_all_cells      (fits)
       -> SingleCellDataAnalysis.signal_cor.quantify_all_cells_acor      (acor)
-      -> SingleCellDataAnalysis.clustering.cluster_cells_by_amplitude_and_delay
-         (per-pole amplitude and midline, re-ordered so pol1 is the brighter
-          pole, plus Periodicity, NC_score, a1a2, d, dd)
+      -> SingleCellDataAnalysis.PCA_utils.load_experiment_features
+         (per-pole a / mid / v, re-ordered so pol1 is the brighter pole, plus
+          NC_score, Periodicity, a1a2, d, dd — the eleven columns the
+          autoencoder loader reads)
+
+What a datapoint is
+-------------------
+**One cell, in ONE film, over exactly 101 frames.** The reference trajectory
+loader keys on experiment + global cell + source and hard-skips any trace whose
+length is not exactly 101, so a global cell followed across several consecutive
+films is several datapoints, not one. Concatenating a cell's films produces a
+trace of the wrong length that is silently dropped downstream.
 
 Identity (P12)
 --------------
-Cells are keyed by **global_cell_id** from `sequence_linkage.json`, for example
-`5_1_N1_F0_cell_50`, with `(film, local_cell_id)` carried alongside. The M156
-build used `new_cell_id` row numbers, which P12 forbids as an identity: "Never
-key colour on transient UI indices ... or `new_cell_id` row numbers."
+`<global_cell_id>__<film>`, with `global_cell_id` from `sequence_linkage.json`
+and the film standing in for the reference's `source`. `local_cell_id` is
+carried alongside. Not `new_cell_id` row numbers, which P12 forbids as an
+identity.
 
 Model-only frames
 -----------------
@@ -70,24 +79,27 @@ SEQS = ["5_1_N1_F0", "5_1_N1_F1", "5_1_N1_F2"]
 FRAMES_PER_FILM = 101   # FL films run t = 0..100
 
 
-def build_id_map(exp_dir):
-    """(film, local_cell_id) -> global_cell_id, from sequence_linkage.json (P12).
+def datapoint_id(gid, film):
+    """One datapoint is one cell in ONE film over its 101 frames.
 
-    Also returns film -> ordinal among the FLUORESCENCE films of its sequence.
-    A sequence's films are CONSECUTIVE acquisition blocks, each restarting at
-    t = 0, so a global cell seen in FL1 and FL4 has two separate stretches of
-    its life on the same 0..100 axis. Keying on global_cell_id without an
-    offset silently stacks them into one series with duplicate time points —
-    which is exactly what happened on the first run here.
+    This mirrors the reference loader, which keys on experiment + global cell +
+    source and hard-skips any trace whose length is not exactly 101. A global
+    cell followed across several films is several datapoints, not one: the films
+    are consecutive acquisition blocks and concatenating them produces a trace of
+    the wrong length that the loader drops outright.
     """
+    return f"{gid}__{film}"
+
+
+def build_id_map(exp_dir):
+    """(film, local_cell_id) -> global_cell_id, from sequence_linkage.json (P12)."""
     linkage = json.load(open(Path(exp_dir) / "sequence_linkage.json"))
     out, order = {}, {}
     for seq in SEQS:
         if seq not in linkage:
             continue
         films = linkage[seq]["films"]
-        fl_films = [f for f in films if "FL" in f]
-        for k, film in enumerate(fl_films):
+        for k, film in enumerate([f for f in films if "FL" in f]):
             order[film] = k
         for gid, locals_ in linkage[seq]["global_cells"].items():
             for film, lc in zip(films, locals_):
@@ -122,16 +134,19 @@ def load_stacked(quant_dir, id_map, film_order):
         prim["pol1_int_corr"] = prim["pol1_int"] - prim["cyt_int"]
         prim["pol2_int_corr"] = prim["pol2_int"] - prim["cyt_int"]
         prim["septum_int_corr"] = prim["septum_int"] - prim["cyt_int"]
-        prim["cell_id"] = gid
+        prim["cell_id"] = datapoint_id(gid, film)
+        prim["global_cell_id"] = gid
+        prim["source"] = film
         prim["film"] = film
         prim["local_cid"] = lc
-        prim["local_time"] = prim["time_point"]
-        prim["time_point"] = k * FRAMES_PER_FILM + prim["local_time"]
+        # local time IS the time axis: one datapoint is one film's 101 frames
+        prim = prim.sort_values("time_point")
 
         n = len(prim)
         n_model = int(prim["model_only"].fillna(False).astype(bool).sum())
         meta.append(dict(
-            cell_id=gid, film=film, local_cid=lc, n_frames=n,
+            cell_id=datapoint_id(gid, film), global_cell_id=gid,
+            film=film, local_cid=lc, n_frames=n,
             n_model_only=n_model,
             model_only_pct=round(100.0 * n_model / n, 2) if n else np.nan,
             n_stage3_good=int(prim["stage3_good"].fillna(False).astype(bool).sum()),
@@ -140,26 +155,22 @@ def load_stacked(quant_dir, id_map, film_order):
             t_div=(prim["stage3_t_div"].dropna().iloc[0]
                    if prim["stage3_t_div"].notna().any() else np.nan),
         ))
-        rows.append(prim[["time_point", "local_time", "pol1_int_corr", "pol2_int_corr",
-                          "septum_int_corr", "cell_id", "film", "local_cid"]])
+        rows.append(prim[["time_point", "pol1_int_corr", "pol2_int_corr",
+                          "septum_int_corr", "cell_id", "global_cell_id",
+                          "source", "film", "local_cid"]])
     if not rows:
         raise SystemExit("no quantified cells found")
     stacked = pd.concat(rows, ignore_index=True).sort_values(["cell_id", "time_point"])
+    meta = pd.DataFrame(meta)
 
-    # One feature row per global cell, so per-cell provenance is aggregated over
-    # whichever films that cell was seen in.
-    per_film = pd.DataFrame(meta)
-    agg = (per_film.groupby("cell_id")
-           .agg(n_films=("film", "nunique"),
-                films=("film", lambda s: "|".join(sorted(set(s)))),
-                local_cids=("local_cid", lambda s: "|".join(str(v) for v in sorted(set(s)))),
-                n_frames=("n_frames", "sum"),
-                n_model_only=("n_model_only", "sum"),
-                n_stage3_good=("n_stage3_good", "sum"))
-           .reset_index())
-    agg["model_only_pct"] = (100.0 * agg.n_model_only / agg.n_frames).round(2)
-    agg["stage3_good_pct"] = (100.0 * agg.n_stage3_good / agg.n_frames).round(2)
-    return stacked, agg, per_film, unmapped
+    # A trace that is not exactly 101 frames is dropped by the downstream
+    # trajectory loader, so flag it here rather than letting it vanish silently.
+    short = meta[meta.n_frames != FRAMES_PER_FILM]
+    if len(short):
+        print(f"WARNING: {len(short)} datapoints are not {FRAMES_PER_FILM} frames "
+              f"and will be dropped downstream; lengths "
+              f"{sorted(short.n_frames.unique())[:6]}", flush=True)
+    return stacked, meta, unmapped
 
 
 def main():
@@ -178,14 +189,15 @@ def main():
     print(f"id map: {len(id_map)} (film, local_cell_id) -> global_cell_id; "
           f"{len(film_order)} FL films ordered", flush=True)
 
-    stacked, meta, per_film, unmapped = load_stacked(a.quant, id_map, film_order)
+    stacked, meta, unmapped = load_stacked(a.quant, id_map, film_order)
     if a.limit:
         keep = meta.cell_id.unique()[:a.limit]
         meta = meta[meta.cell_id.isin(keep)]
-        per_film = per_film[per_film.cell_id.isin(keep)]
         stacked = stacked[stacked.cell_id.isin(keep)]
     dup = stacked.groupby(["cell_id", "time_point"]).size()
-    print(f"duplicate (cell, time) pairs after offsetting: {int((dup > 1).sum())}", flush=True)
+    print(f"duplicate (datapoint, time) pairs: {int((dup > 1).sum())}", flush=True)
+    n101 = int((meta.n_frames == FRAMES_PER_FILM).sum())
+    print(f"datapoints with exactly {FRAMES_PER_FILM} frames: {n101} of {len(meta)}", flush=True)
     print(f"cells: {meta.cell_id.nunique()}  rows: {len(stacked)}  "
           f"unmapped cells skipped: {unmapped}", flush=True)
     print(f"model-only frames: {meta.n_model_only.sum()} of {meta.n_frames.sum()} "
@@ -227,7 +239,6 @@ def main():
     features_path = a.out / "umap_features_m160.csv"
     out.to_csv(features_path, index=False)
     meta.to_csv(a.out / "cell_provenance_m160.csv", index=False)
-    per_film.to_csv(a.out / "cell_provenance_per_film_m160.csv", index=False)
 
     prov = dict(
         artifact=features_path.name, created=stamp,
