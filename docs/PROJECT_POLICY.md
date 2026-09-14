@@ -7,6 +7,8 @@ Version 1.6 (2026-09-02) adds P8. Version 1.7 (2026-09-08) adds P12.
 Version 1.8 (2026-09-09) adds P13. Version 1.9 (2026-09-10) adds P14.
 Version 1.10 (2026-09-11) adds P15, revises P14 stage 3 for model-based dense
 tracking, and adds the development-report location rule to P3.
+Version 1.11 (2026-09-14) extends P14 to stages 5 and 6 (feature extraction and
+manifold), and adds those stages plus the vertical-strip rule to P15.
 
 The working policy for changes to this repository, whether made by a person or an
 AI agent. [AGENTS.md](../AGENTS.md) is the entry router; this file is the
@@ -741,6 +743,15 @@ the secondary number improves.
    model** built from the stage-1 keyframes, applied to the stage-2 `_seg.tif`
    series. Canonical module in P15.
 4. **Quantification — polarity-site dynamics** on the dense mask series.
+   Produces the per-frame table **and the vertical cell strips**: strips are a
+   stage-4 by-product, emitted when `quantify_one_object` is given a
+   `strip_tiles` list (`--make_strips`). A stage-4 run that omits them leaves
+   stage 6 without its image panel.
+5. **Feature extraction — per-cell engineered features** from the stage-4
+   series: cytoplasm correction, trend and oscillation fits, detrended
+   autocorrelation, then the eleven-column feature row. Canonical modules in
+   P15.
+6. **Manifold — UMAP explorer** over those features. Canonical modules in P15.
 
 ### Rules
 
@@ -868,6 +879,40 @@ infer it from a filename.**
 Film intensity scale for the GFP path is `FindMovieMaxMin`: pool every 10th pixel
 of **every** frame of the film, then take the 99.5th and 1st percentiles. Using
 the first frame alone ignores photobleaching and shifts the scale.
+
+**Vertical strips are a stage-4 artifact.** `quantify_one_object` appends one
+`build_strip_tile()` per frame to the `strip_tiles` list it is handed, and
+`save_strip_from_tiles` writes the PNG. Pass that list. If a stage-4 run omitted
+it, rebuild with the strips-only path (`build_strips_only.py`, or
+`build_strips_m160.py` for dense masks) — **never** by requantifying, since a
+strip is fully determined by the frame image and the mask and touches none of
+the EM or pole fitting.
+
+#### Stage 5 — feature extraction
+
+| Module | Method |
+| :--- | :--- |
+| `SingleCellQuantificationHPC/build_features_m160.py` | Registered above; the reference implementation for a model-based dense experiment. |
+| `SingleCellDataAnalysis/signal_analysis.py::quantify_all_cells` | Per cell and pole, selects trend vs trend+oscillation by AIC and flattens the parameters plus phase-to-frame offsets. Needs at least five valid time points. |
+| `SingleCellDataAnalysis/signal_cor.py::quantify_all_cells_acor` | Detrended autocorrelation; source of `NC_score`, `precision_sum`, `freq_distance_sum`. |
+| `SingleCellDataAnalysis/PCA_utils.py::load_experiment_features` | **The feature row.** Emits the eleven columns `FC_AE_data_loader` reads, as raw values: `a` (trend slope), `mid` (= a·50 + b), `v` (residual variance of a straight-line fit) per pole, plus `NC_score`, `Periodicity`, `a1a2`, `d`, `dd`. Reads its three inputs from `<dir>/unaligned_pairs_quant/`, and for the stacked file looks **only** there. |
+| `SingleCellQuantificationHPC/build_strips_m160.py` | Vertical strips for dense masks when stage 4 did not emit them; one strip per global cell, tiles concatenated across films in sequence order. |
+
+#### Stage 6 — manifold
+
+| Module | Method |
+| :--- | :--- |
+| `SingleCellDataAnalysis/FC_AE_3d_umap.py` | The self-contained explorer builder: loads the trained autoencoder, pairs features with 101-frame trajectories, reads pre-built strips, emits 3D and 2D UMAP with a colour-axis dropdown. This is what produced the reference explorer HTML. |
+| `build_umap_html_m156_*.py` | Engineered-feature UMAP: standard-scale the eleven features, `umap.UMAP(n_components=2, random_state=42, n_jobs=1)`, then **re-embed into an existing explorer HTML**, lifting per-cell objects (trajectories, autocorrelation arrays, fit params, strips) out of it. Experiment-dated and frozen under P1; they cannot build an explorer from nothing. |
+
+**Reference manifold vs standalone.** P1 lists it among the known traps: manifold
+reference scaling and the UMAP fit are computed on the **reference experiment
+only**, and other experiments are projected with `.transform()`. The trained
+autoencoder covers a single reference experiment. A build that calls
+`fit_transform` on its own cells produces a **standalone** map in its own
+coordinate system, not comparable with the reference manifold or with another
+standalone map. That is legitimate, and the M156 builders do it, but the report
+for such a build must say so explicitly rather than leave it to be inferred.
 
 #### Superseded — do not use for 1-channel experiments
 
