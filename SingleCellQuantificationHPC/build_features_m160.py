@@ -57,7 +57,7 @@ for _p in (str(_HERE), str(_REPO)):
 
 from SingleCellDataAnalysis.signal_analysis import quantify_all_cells
 from SingleCellDataAnalysis.signal_cor import quantify_all_cells_acor
-from SingleCellDataAnalysis.clustering import cluster_cells_by_amplitude_and_delay
+from SingleCellDataAnalysis.PCA_utils import load_experiment_features
 
 EXP_NAME = "2026_08_28_M160"
 DEFAULT_EXP = Path("/Volumes/X10 Pro/Movies") / EXP_NAME
@@ -191,12 +191,17 @@ def main():
     print(f"model-only frames: {meta.n_model_only.sum()} of {meta.n_frames.sum()} "
           f"({100*meta.n_model_only.sum()/max(meta.n_frames.sum(),1):.2f}%)", flush=True)
 
-    stacked_path = a.out / "stacked_pol_corr.csv"
+    # load_experiment_features() looks for its three inputs under
+    # <exp_dir>/unaligned_pairs_quant/, and for the stacked file it looks ONLY
+    # there. Write the layout it expects rather than modifying it (P15).
+    quant_out = a.out / "unaligned_pairs_quant"
+    quant_out.mkdir(parents=True, exist_ok=True)
+    stacked_path = quant_out / "stacked_gfp1_gfp2_for_unaligned_pairs.csv"
     stacked.to_csv(stacked_path, index=False)
 
     ids = sorted(stacked.cell_id.unique())
-    fits_path = a.out / "model_fits_by_cell.csv"
-    acor_path = a.out / "acor_detrended_results.csv"
+    fits_path = quant_out / "model_fits_by_cell.csv"
+    acor_path = quant_out / "acor_detrended_results.csv"
     print("fitting trend / oscillation models ...", flush=True)
     quantify_all_cells(stacked, ids, feature1="pol1_int_corr", feature2="pol2_int_corr",
                        filename=str(fits_path))
@@ -204,13 +209,19 @@ def main():
     quantify_all_cells_acor(stacked, ids, feature1="pol1_int_corr", feature2="pol2_int_corr",
                             filename=str(acor_path))
 
-    fits = pd.read_csv(fits_path)
-    acor = pd.read_csv(acor_path)
-    # cluster_cells_by_amplitude_and_delay reads the per-pole fit rows and the
-    # per-cell acor columns from one frame.
-    df_result = fits.merge(acor, on="cell_id", how="left", suffixes=("", "_acor"))
-    feats, _, _ = cluster_cells_by_amplitude_and_delay(df_result, verbose=False)
+    # The eleven features the autoencoder reads come from load_experiment_features,
+    # NOT from clustering.cluster_cells_by_amplitude_and_delay. The latter is a
+    # clustering routine that builds a similar row but emits only amplitude and
+    # midline per pole; it has no 'v' term and returns weight-normalised values.
+    feats = load_experiment_features(str(a.out))
     feats = feats.reset_index().rename(columns={"index": "cell_id"})
+    if "cell_id" not in feats.columns:
+        feats = feats.rename(columns={feats.columns[0]: "cell_id"})
+    want = ["pol1_a", "pol1_mid", "pol1_v", "pol2_a", "pol2_mid", "pol2_v",
+            "NC_score", "Periodicity", "a1a2", "d", "dd"]
+    missing = [c for c in want if c not in feats.columns]
+    if missing:
+        raise SystemExit(f"feature assembly is missing columns: {missing}")
 
     out = feats.merge(meta, on="cell_id", how="left")
     features_path = a.out / "umap_features_m160.csv"

@@ -5,7 +5,8 @@
 **Dataset**: `2026_08_28_M160`, sequences `5_1_N1_F0` / `F1` / `F2`
 **Stage**: 5 (feature extraction), consuming stage-4 output from
 `quantify_model_based_dense.py`
-**Status**: complete. 328 global cells, 59,241 frames, nine features per cell.
+**Status**: complete. 328 global cells, 59,241 frames, eleven features per cell.
+One author error found after the first build and corrected in §5.
 **Policy**: identity per P12; output location per P4; canonical modules per P15;
 this report filed per P3.
 
@@ -40,11 +41,22 @@ Canonical modules only (P15). Nothing in `SingleCellDataAnalysis/` was modified.
 | 3 | this script | Place each film on a sequence-continuous time axis (§4) |
 | 4 | `signal_analysis.quantify_all_cells` | Per cell and pole, select trend vs trend+oscillation by AIC; emit parameters and phase offsets |
 | 5 | `signal_cor.quantify_all_cells_acor` | Detrended autocorrelation per cell |
-| 6 | `clustering.cluster_cells_by_amplitude_and_delay` | Assemble the feature row, re-ordering the poles so `pol1` is the brighter one |
+| 6 | `PCA_utils.load_experiment_features` | Assemble the feature row, re-ordering the poles so `pol1` is the brighter one |
 
-Feature row: `pol1_a`, `pol1_mid`, `pol2_a`, `pol2_mid`, `a1a2` (= a1·a2),
-`d` (= |mid1 − mid2|), `dd` (= a1 − a2), `Periodicity`
-(= precision_sum − freq_distance_sum), `NC_score`.
+Feature row, eleven columns: `pol1_a`, `pol1_mid`, `pol1_v`, `pol2_a`,
+`pol2_mid`, `pol2_v`, `NC_score`, `Periodicity`, `a1a2` (= a1·a2),
+`d` (= |mid1 − mid2|), `dd` (= a1 − a2).
+
+- `a` is the trend slope, `mid = a·50 + b` the fitted value at the midpoint.
+- `v` is the **residual variance of a straight-line fit** to the corrected
+  trace: how far the signal departs from a linear trend, carrying the
+  oscillation and noise energy that `a` and `mid` do not.
+- `Periodicity` = precision_sum − freq_distance_sum.
+
+`load_experiment_features` reads its three inputs from
+`<dir>/unaligned_pairs_quant/`, and for the stacked file it looks **only**
+there, with no fallback. This build writes that layout rather than modifying the
+module (P15).
 
 ---
 
@@ -97,22 +109,31 @@ rediscovered.
 
 ---
 
-## 5. Defect 2 — two features do not exist (open)
+## 5. Defect 2 — the wrong assembly module (author error, corrected)
 
-`FC_AE_data_loader.py` reads eleven columns:
+The first version of this build produced **nine** features and recorded the two
+missing ones as a pre-existing gap in the codebase. That was wrong, and the
+claim is retracted here rather than quietly dropped (P1, P3).
 
-```
-pol1_a, pol1_mid, pol1_v, pol2_a, pol2_mid, pol2_v,
-NC_score, Periodicity, a1a2, d, dd
-```
+**What happened.** The chain was traced from the wrong end. Searching for a
+function that builds a row resembling the feature row finds
+`clustering.cluster_cells_by_amplitude_and_delay`, and that is what the first
+version called. It is a clustering routine: it emits only `a` and `mid` per
+pole, its velocity terms are commented out, and it returns its *weight-
+normalised* frame, with standard deviations pinned to the clustering weights of
+3 and 1 rather than to the data.
 
-`cluster_cells_by_amplitude_and_delay` emits only `a` and `mid` per pole; the
-velocity terms are commented out in `clustering.py`. **Nine of the eleven exist.**
+The correct module is the one `FC_AE_data_loader` actually imports,
+`PCA_utils.load_experiment_features`. It emits all eleven columns, including
+both `v` terms, as raw values, leaving scaling to the loader.
 
-They were not invented here. Either the loader is ahead of the assembly
-function, or an older assembly path produced `v` and was superseded. Resolving
-it is a decision for the project owner, and it is a pre-existing gap rather than
-anything this run introduced.
+**This is exactly the failure P15 exists to prevent** — choosing a module by
+what it looks like rather than by what the consumer calls — committed in the
+same session P15 was written. The stage-5 entry in the P15 registry has been
+corrected to name `load_experiment_features`.
+
+Nothing upstream of the assembly step changed: the fits and autocorrelation
+inputs are identical, so only the final table was rebuilt.
 
 ---
 
@@ -171,11 +192,9 @@ where the segmentation was taken unchanged.
 Films per cell: 176 cells in one film, 88 in two, 27 in three, 22 in four, 7 in
 five, 7 in six, 1 in seven. Frames per cell: median 98, range 49 to 686.
 
-**The written feature values are normalised, not raw.** The assembly function
-returns its weighted-normalised frame, with weights of 3 on amplitude, midline,
-`a1a2`, `d` and `dd`, and 1 on `Periodicity` and `NC_score`. This matches what
-the M156 UMAP consumed. Raw parameters remain recoverable from
-`model_fits_by_cell.csv` and `acor_detrended_results.csv`.
+**The written feature values are raw**, not normalised. `load_experiment_features`
+returns the fitted quantities directly and the downstream loader applies its own
+scaling. Eleven columns, 328 rows, no nulls.
 
 ---
 
@@ -187,12 +206,12 @@ All under
 
 | File | Contents |
 | :--- | :--- |
-| `umap_features_m160.csv` | 328 cells × nine features, plus provenance columns |
+| `umap_features_m160.csv` | 328 cells × eleven features, plus provenance columns |
 | `cell_provenance_m160.csv` | Per global cell: films, local ids, frame and model-only counts |
 | `cell_provenance_per_film_m160.csv` | The same before merging films |
-| `stacked_pol_corr.csv` | Cytoplasm-corrected series on the continuous time axis |
-| `model_fits_by_cell.csv` | Raw trend and oscillation parameters |
-| `acor_detrended_results.csv` | Raw autocorrelation results |
+| `unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv` | Cytoplasm-corrected series on the continuous time axis |
+| `unaligned_pairs_quant/model_fits_by_cell.csv` | Trend and oscillation parameters |
+| `unaligned_pairs_quant/acor_detrended_results.csv` | Autocorrelation results |
 | `_provenance.json` | Run record (P3) |
 | `../features_build.log` | Run log |
 
@@ -200,8 +219,12 @@ All under
 
 ## 9. Limitations and Next Steps
 
-1. **`pol1_v` and `pol2_v` are missing** (§5). The autoencoder loader cannot run
-   against this table unmodified.
+1. **The autoencoder also needs trajectories, not just features.**
+   `load_feature_constrained_data` pairs this table with 101-frame trajectories
+   from `AE_data_loader.load_and_preprocess_trajectories` and keeps only cells
+   present in both. Our cells run 49 to 686 frames on a sequence-continuous
+   axis, not 101, so that pairing has not been attempted and is the next thing
+   to resolve before any autoencoder run.
 2. **Model-only frames are in the fits.** That is the instruction and it is
    recorded, but an oscillation amplitude fitted partly over inferred masks is
    not the same measurement as one fitted over segmented cells. The sensible
