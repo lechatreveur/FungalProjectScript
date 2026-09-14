@@ -230,7 +230,40 @@ requires the reference fit plus `.transform()` for cross-experiment work; that
 was not done here because a standalone map is what was asked for.
 
 Settings match the previous builds: standard-scaled eleven features, then
-`umap.UMAP(n_components=2, random_state=42, n_jobs=1)`.
+`umap.UMAP` with `random_state=42, n_jobs=1`, fitted at both three and two
+components.
+
+**Format follows the Sept17 reference**, `SingleCellDataAnalysis/FC_AE_3d_umap.py`:
+light theme (`#f4f6f8` page, white panels, `#1e293b` toolbar), 3D/2D dimension
+toggle, "Color by" dropdown, Viridis, and a sidebar of cards holding the cell
+statistics, the intensity profile with Pol1 in `#ef4444` and Pol2 in `#3b82f6`,
+and the vertical strip.
+
+### 9.2 Colour range — why the first build was unreadable
+
+The reference sets `cmin`/`cmax` from the raw minimum and maximum of the colour
+array. On a skewed axis a single outlier compresses every other cell into one
+end of the scale. The reference already concedes this for one axis, with a
+hand-tuned piecewise `remap_for_display` for the cycle score.
+
+This build takes the general form: robust limits from the 2nd and 98th
+percentile per axis, with values beyond simply clamping. The difference is not
+marginal:
+
+| Colour axis | Raw range | 2nd–98th percentile |
+| :--- | :--- | :--- |
+| Pol1 mid intensity | −6.57 to 49.9 | −2.96 to 9.88 |
+| Pole distance | 0.0006 to 50.1 | 0.021 to 21.2 |
+| Pol1 variability | 0.074 to 29.8 | 0.094 to 11.0 |
+| Model-only % | 0 to 69.4 | 0 to 20.1 |
+
+On Pol1 mid intensity the usable gradient was spanning about a fifth of the bar,
+so most cells rendered as the same dark purple.
+
+The polarity panel was also widened from 240 to 300 pixels tall and given a
+dotted zero line at the cytoplasm level plus a dashed marker at the division
+frame, so the Pol1 against Pol2 relationship is legible rather than two thin
+traces in a small box.
 
 **Why a new module.** `build_umap_html_m156_*.py` does not build an explorer. It
 fits a UMAP and then re-embeds into an existing explorer HTML, lifting each

@@ -906,6 +906,20 @@ the EM or pole fitting.
 | `build_umap_html_m156_*.py` | Engineered-feature UMAP: standard-scale the eleven features, `umap.UMAP(n_components=2, random_state=42, n_jobs=1)`, then **re-embed into an existing explorer HTML**, lifting per-cell objects (trajectories, autocorrelation arrays, fit params, strips) out of it. Experiment-dated and frozen under P1; they cannot build an explorer from nothing. |
 | `SingleCellQuantificationHPC/build_umap_html_m160.py` | Self-contained **standalone** explorer for an experiment with no existing template: same UMAP settings, but constructs each cell object from the stage-4/5 artifacts (trajectories, features, strips) instead of lifting them. Writes the page incrementally so the embedded strips need not be held in memory, and states its standalone status in a banner on the page. |
 
+**Explorer format.** `FC_AE_3d_umap.py` is the house format and new explorers
+follow it: light theme (`#f4f6f8` page, white panels, `#1e293b` toolbar), a
+dimension toggle and a "Color by" dropdown, Viridis, and a card sidebar with the
+cell statistics, the intensity profile (Pol1 `#ef4444`, Pol2 `#3b82f6`) and the
+vertical strip. Do not invent a new palette or layout per experiment.
+
+**Colour limits are robust, not raw.** Set `cmin`/`cmax` from the 2nd and 98th
+percentile of the colour array, not its minimum and maximum. A single outlier
+otherwise compresses every other cell into one end of the scale — on M160's Pol1
+mid intensity the raw range was −6.6 to 49.9 while the middle 96% of cells sat
+between −3.0 and 9.9, so most of the map rendered as one colour. The reference
+already concedes the problem with its hand-tuned `remap_for_display`; percentile
+limits are the general form of the same fix.
+
 **Reference manifold vs standalone.** P1 lists it among the known traps: manifold
 reference scaling and the UMAP fit are computed on the **reference experiment
 only**, and other experiments are projected with `.transform()`. The trained
