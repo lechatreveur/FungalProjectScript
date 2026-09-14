@@ -904,6 +904,7 @@ the EM or pole fitting.
 | :--- | :--- |
 | `SingleCellDataAnalysis/FC_AE_3d_umap.py` | The self-contained explorer builder: loads the trained autoencoder, pairs features with 101-frame trajectories, reads pre-built strips, emits 3D and 2D UMAP with a colour-axis dropdown. This is what produced the reference explorer HTML. |
 | `build_umap_html_m156_*.py` | Engineered-feature UMAP: standard-scale the eleven features, `umap.UMAP(n_components=2, random_state=42, n_jobs=1)`, then **re-embed into an existing explorer HTML**, lifting per-cell objects (trajectories, autocorrelation arrays, fit params, strips) out of it. Experiment-dated and frozen under P1; they cannot build an explorer from nothing. |
+| `SingleCellQuantificationHPC/build_umap_html_m160.py` | Self-contained **standalone** explorer for an experiment with no existing template: same UMAP settings, but constructs each cell object from the stage-4/5 artifacts (trajectories, features, strips) instead of lifting them. Writes the page incrementally so the embedded strips need not be held in memory, and states its standalone status in a banner on the page. |
 
 **Reference manifold vs standalone.** P1 lists it among the known traps: manifold
 reference scaling and the UMAP fit are computed on the **reference experiment

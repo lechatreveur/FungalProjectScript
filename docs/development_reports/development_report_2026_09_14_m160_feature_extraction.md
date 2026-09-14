@@ -217,7 +217,50 @@ All under
 
 ---
 
-## 9. Limitations and Next Steps
+## 9. Stage 6 — the standalone M160 map
+
+`SingleCellQuantificationHPC/build_umap_html_m160.py` →
+`umap_m160_standalone.html` (183 MB), 328 cells.
+
+**This is a standalone map and is stated as such, in the report and in a banner
+on the page itself.** The scaler and the UMAP are fit on M160's own cells, so
+the coordinates are M160's own and are not comparable with the reference
+manifold or with the M156 maps, which are each standalone in the same way. P1
+requires the reference fit plus `.transform()` for cross-experiment work; that
+was not done here because a standalone map is what was asked for.
+
+Settings match the previous builds: standard-scaled eleven features, then
+`umap.UMAP(n_components=2, random_state=42, n_jobs=1)`.
+
+**Why a new module.** `build_umap_html_m156_*.py` does not build an explorer. It
+fits a UMAP and then re-embeds into an existing explorer HTML, lifting each
+cell's trajectories, autocorrelation arrays, fit parameters and strips out of it.
+M160 had no such template, so the cell objects are constructed here from the
+stage-4 and stage-5 artifacts directly.
+
+The page carries a scatter with eight selectable colour axes, including
+`model_only_pct` and `stage3_good_pct` so tracking quality can be inspected
+against position on the map, plus per-cell metadata, the cytoplasm-corrected
+Pol1 and Pol2 traces on the sequence-continuous axis, and the vertical strip.
+
+### 9.1 Strips were missing, and that was an omission
+
+Vertical strips are a **stage-4** artifact: `quantify_one_object` appends one
+tile per frame to the `strip_tiles` list it is handed, and `--make_strips`
+writes the PNG. `quantify_model_based_dense.py` did not pass that list, so M160
+had none of the 3,816 strips on disk.
+
+They did not need requantifying. A strip is fully determined by the frame image
+and the mask — `build_strip_tile` derives its own rotation from
+`regionprops.orientation` and touches none of the EM or pole fitting — which is
+the reasoning `build_strips_only.py` was already written on.
+`build_strips_m160.py` does the same for dense masks: 328 strips in 48 minutes,
+no errors, one per global cell with tiles concatenated across films in sequence
+order. The rule is now in P15.
+
+---
+
+## 10. Limitations and Next Steps
 
 1. **The autoencoder also needs trajectories, not just features.**
    `load_feature_constrained_data` pairs this table with 101-frame trajectories
