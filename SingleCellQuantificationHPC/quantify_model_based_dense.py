@@ -157,6 +157,30 @@ def quantify_cell(df, cache, gmax, gmin, plot_dir):
     return rows
 
 
+# Columns every current output carries: the septum pattern, the split, and the
+# stage-3 provenance.  A file missing any of them was written by an older code
+# path and must be regenerated rather than skipped.
+REQUIRED_COLS = ("pattern_score_raw", "split_n0", "stage3_branch", "pol1_int")
+
+
+def _is_current(path):
+    """Resume skips a finished cell — but only if it was finished by THIS code
+    path. Existence alone is not enough: a run that changed routine mid-way
+    leaves stale files that a plain existence check silently preserves, which is
+    exactly what happened on 2026-09-11 and survived into the merged table."""
+    try:
+        cols = set(pd.read_csv(path, nrows=1).columns)
+    except Exception:
+        return False
+    if not set(REQUIRED_COLS) <= cols:
+        return False
+    try:
+        d = pd.read_csv(path, usecols=["error"])
+    except Exception:
+        return True
+    return not (d["error"].fillna("") != "").any()
+
+
 def _run_chunk(args):
     """One worker's slice of the cell list.  Module level so it survives spawn."""
     files, exp, out, force, offset, total = args
@@ -167,7 +191,7 @@ def _run_chunk(args):
     for i, f in enumerate(files, 1):
         film = f.parent.name
         dst = Path(out) / film / f.name
-        if dst.exists() and not force:
+        if dst.exists() and not force and _is_current(dst):
             skipped += 1
             continue
         try:
