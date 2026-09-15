@@ -217,6 +217,37 @@ All under
 
 ---
 
+## 8.1 Three corrections after review (2026-09-15)
+
+The build described above was wrong in three ways, all found by comparing
+against the Sept17 reference rather than by reasoning from the code as written.
+Recorded here rather than dropped (P1, P3).
+
+**What a datapoint is.** One cell in **one film** over exactly 101 frames, keyed
+`<global_cell_id>__<film>`, mirroring the reference's experiment + global cell +
+source. The earlier build merged each global cell's consecutive films into one
+49-to-686 frame series. The reference trajectory loader requires exactly 101 and
+hard-skips anything else, so every M160 cell would have been dropped.
+
+**Keyframes were never quantified.** Stage 3 emits interior frames only, so each
+film trace was 98 frames running t = 1..99 with 0, 50 and 100 absent. Stage 4
+now also quantifies the three curated keyframes from the canonical masks, tagged
+`KEYFRAME`. After requantification, 604 of 605 traces are exactly 101 frames;
+the exception is `FL7_F0` cell 421, whose stage-3 run failed on a missing
+keyframe mask and which is correctly dropped.
+
+**Strip contrast.** `ImageQuantification` rescales each crop to the **film's**
+intensity range before handing it to `build_strip_tile`, using the 1st and
+99.5th percentiles. The first strip build passed raw camera counts, leaving the
+background offset in for the per-strip normalisation to absorb and flattening
+the signal. Strips are now one per datapoint, so a strip and the trajectory
+beside it cover the same frames.
+
+Cohort after these fixes: **604 datapoints over 327 global cells**, 152 of them
+spanning two or more films.
+
+---
+
 ## 9. Stage 6 — the standalone M160 map
 
 `SingleCellQuantificationHPC/build_umap_html_m160.py` →
@@ -229,9 +260,43 @@ manifold or with the M156 maps, which are each standalone in the same way. P1
 requires the reference fit plus `.transform()` for cross-experiment work; that
 was not done here because a standalone map is what was asked for.
 
-Settings match the previous builds: standard-scaled eleven features, then
-`umap.UMAP` with `random_state=42, n_jobs=1`, fitted at both three and two
-components.
+**UMAP is fit on autoencoder latents, not on the features.** This was the third
+error in the first build and the most consequential: the autoencoder folds the
+101-frame Pol1/Pol2 trajectory together with the eleven features into one
+vector, and fitting UMAP on the features alone discards the trajectory shape
+entirely, which is the thing the model exists to encode.
+
+A model was trained on M160 alone (`train_fc_ae_m160.py`, 300 epochs, CPU, seed
+42), reusing `MultimodalAutoencoder3D` and `load_feature_constrained_data`
+unmodified. Loss fell from 1.99 to 0.276, split 0.181 trajectory and 0.094
+feature. Training on M160 alone is what makes the manifold standalone;
+projecting through the Sept17 model would have put M160 on the reference
+manifold instead.
+
+UMAP then runs on those latents with `random_state=42, n_jobs=1`, at three and
+two components.
+
+### 9.3 Link lines — following a cell across the manifold
+
+Because a datapoint is one cell in one film, a global cell followed across
+consecutive films appears as several points, and the point of the map is to see
+where it moves between them. The link function follows the M156 explorer:
+
+- Datapoints are grouped by `global_cell_id` and joined in **film order**.
+- Each link is split into six sub-segments with a **graded opacity ramp**, so
+  direction of travel is readable rather than just connectivity.
+- Two styles: dull grey `rgba(160,174,192, 0.10→0.25)` at width 1.2 for every
+  cell, and bold sky blue `rgba(2,132,199, 0.50→1.00)` at width 4.8 in 3D and
+  3.8 in 2D for the selected cell.
+- Lines carry `hoverinfo:'none'` and stay out of the legend, so they never
+  interfere with picking points, and sit behind the markers.
+- A checkbox toggles them, and the sidebar lists the selected cell's path film
+  by film.
+
+152 of the 327 global cells span two or more films and therefore draw a link.
+
+Manual colour range inputs were also added, which the M156 page has and the
+first build omitted.
 
 **Format follows the Sept17 reference**, `SingleCellDataAnalysis/FC_AE_3d_umap.py`:
 light theme (`#f4f6f8` page, white panels, `#1e293b` toolbar), 3D/2D dimension
