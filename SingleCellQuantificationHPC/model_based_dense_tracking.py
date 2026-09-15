@@ -64,7 +64,12 @@ for _p in (str(_HERE), str(_HERE.parent)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from ground_truth_corrector.schemas import validate_and_decode_rle, encode_mask_to_rle
+# P15 names Cell_tracking_functions as the canonical mask serialisation, and
+# it is what every mask CSV in the pipeline already uses. The earlier import
+# from ground_truth_corrector.schemas pulled in pydantic and, through that
+# package's __init__, Flask — neither of which is installed on the HPC, and
+# neither of which a tracker has any business needing.
+from Cell_tracking_functions import rle_decode, rle_encode
 
 # ---------------------------------------------------------------- parameters
 FUSE_K = 1.25          # segment longer than this x expected => fused, not good
@@ -313,7 +318,7 @@ class Cell:
         if not v:
             return None
         try:
-            m = validate_and_decode_rle(v, self.H0, self.W0).astype(bool)
+            m = np.asarray(rle_decode(v, (self.H0, self.W0)), bool)
         except Exception:
             return None
         return m if m.sum() >= MIN_AREA else None
@@ -542,6 +547,6 @@ def interval_rows(cell, res, d):
             intersect_rejected=bool(r.get("intersect_rejected", False)),
             bridged=bool(r.get("bridged", False)),
             t_div=d, height=cell.H0, width=cell.W0,
-            rle=encode_mask_to_rle(full.astype(np.uint8)) if full is not None else "",
+            rle=rle_encode(full) if full is not None else "",
         ))
     return rows

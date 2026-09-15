@@ -24,6 +24,13 @@ before tiling, exactly as `ImageQuantification` does before handing the crop to
 `build_strip_tile`. Passing raw counts leaves the background offset in and
 flattens the signal.
 
+Tile size defaults to 16x56, half the house 32x112 in each dimension and so a
+quarter of the pixels. At full size a strip is ~270 KB and the cohort is 6,246
+of them: 1.7 GB on disk and well over 2 GB once base64-embedded in one page,
+which neither this workstation nor a browser will hold. Halving keeps the cell
+legible along its length while making the set tractable. Pass --tile-h 32
+--tile-w 112 to restore the house size for a small cohort.
+
 Output: <outputs>/2026_08_28_M160/strips/<global_cell_id>__<film>.png  (P4)
 """
 from __future__ import annotations
@@ -108,7 +115,7 @@ class Frames:
         return self.scale[film]
 
 
-def tiles_for_film(df, frames, film):
+def tiles_for_film(df, frames, film, tile_h=16, tile_w=56):
     """One tile per frame, reproducing what --make_strips feeds build_strip_tile.
 
     The contrast step matters and is easy to miss: `ImageQuantification` rescales
@@ -146,7 +153,8 @@ def tiles_for_film(df, frames, film):
         r0, c0, r1, c1 = props[0].bbox
         crop = np.clip((img[r0:r1, c0:c1].astype(np.float32) - c1min) / span * 255.0,
                        0, 255).astype(np.uint8)
-        out.append(build_strip_tile(crop, mask[r0:r1, c0:c1]))
+        out.append(build_strip_tile(crop, mask[r0:r1, c0:c1],
+                                    frame_h=tile_h, frame_w=tile_w))
     return out
 
 
@@ -159,6 +167,10 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--films", nargs="+", default=None,
                     help="restrict to these films (one HPC array task per film)")
+    ap.add_argument("--tile-h", type=int, default=16,
+                    help="tile height in px; the house default is 32")
+    ap.add_argument("--tile-w", type=int, default=56,
+                    help="tile width in px; the house default is 112")
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
 
@@ -207,7 +219,8 @@ def main():
             skipped += 1
             continue
         try:
-            tiles = tiles_for_film(pd.read_csv(f), frames, film)
+            tiles = tiles_for_film(pd.read_csv(f), frames, film,
+                                   tile_h=a.tile_h, tile_w=a.tile_w)
         except Exception as exc:
             print(f"  {dp}: {type(exc).__name__}: {exc}", flush=True)
             failed += 1

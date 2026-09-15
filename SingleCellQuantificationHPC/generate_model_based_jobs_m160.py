@@ -141,6 +141,18 @@ export MPLBACKEND=Agg
 export PYTHONPATH="{code}:{repo}${{PYTHONPATH:+:$PYTHONPATH}}"
 cd {code}
 
+# Stages 5 and 6 need scikit-learn, umap-learn and the SingleCellDataAnalysis
+# package, none of which are on the cluster as of 2026-09-15 (cellpose_env has
+# torch, skimage, tifffile, pandas and scipy only). Fail here with a clear
+# message rather than part-way through a long job.
+python - <<'PYCHK'
+import importlib, sys
+missing = [m for m in ("sklearn", "umap") if not importlib.util.find_spec(m)]
+if missing:
+    sys.exit("stages 5-6 need " + ", ".join(missing) +
+             "; install them or run these stages on the workstation instead")
+PYCHK
+
 echo "--- stage 5: feature extraction ---"
 python -u build_features_m160.py \\
     --exp "{movies}" --quant "{outputs}/quant" --out "{outputs}/features"
@@ -229,12 +241,22 @@ corrected / unreviewed, every film each cell appears in.
 ## Submit
 
     cd {a.hpc_code}/sb_scripts_mbdt_m160
-    JOB=$(sbatch --parsable model_based_m160_array.sh)
-    sbatch --dependency=afterok:$JOB model_based_m160_post.sh
+    sbatch model_based_m160_array.sh
 
 The array runs stages 3, 4 and the strips, one task per film, at most
-{a.throttle} at once. The dependent job runs stages 5 and 6 once every film has
-finished.
+{a.throttle} at once.
+
+**Stages 5 and 6 do not run here.** `cellpose_env` has torch, skimage,
+tifffile, pandas and scipy, but not scikit-learn or umap-learn, and the
+`SingleCellDataAnalysis` package is not deployed on the cluster. Retrieve the
+output and run them on the workstation:
+
+    python SingleCellQuantificationHPC/build_features_m160.py
+    python SingleCellQuantificationHPC/train_fc_ae_m160.py
+    python SingleCellQuantificationHPC/build_umap_html_m160.py
+
+`model_based_m160_post.sh` is kept for the day those packages exist there; it
+checks for them and exits early with a message if they do not.
 
 ## Resume
 
