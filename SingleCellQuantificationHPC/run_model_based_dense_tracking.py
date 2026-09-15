@@ -51,7 +51,8 @@ def keypoints(film):
     return [0, 50, 100] if "FL" in film else [0, 20, 40]
 
 
-def build_tasks(exp, wq_path, seed_path, statuses, channel):
+def build_tasks(exp, wq_path, seed_path, statuses, channel,
+                suspicious_only=False, films_filter=None):
     """-> list of dicts, one per (film, local cell), each carrying its intervals."""
     linkage = {s: json.load(open(exp / "sequence_linkage.json"))[s] for s in SEQS}
     wq = pd.read_csv(wq_path)
@@ -72,8 +73,23 @@ def build_tasks(exp, wq_path, seed_path, statuses, channel):
         films = linkage[seq]["films"]
         if gid not in gc:
             continue
-        pos = row["sus_pos"]
-        pos = eval(pos) if isinstance(pos, str) else pos
+        # A cell's film positions come from the LINKAGE, i.e. every film that
+        # cell actually appears in.
+        #
+        # They must NOT come from the work queue's `sus_pos`, which lists only
+        # the positions flagged suspicious. That column is right for a repair
+        # run, whose job is to fix flagged intervals, and wrong for a cohort
+        # run, whose job is to cover each cell's whole life. Using it here on
+        # 2026-09-14 tracked 700 (film, cell) pairs instead of 6,246: 554 of the
+        # 950 selected cells have an empty `sus_pos` and were never tracked at
+        # all, and the rest got one to three films out of seven. The resulting
+        # feature table was a sample of "wherever something looked wrong",
+        # which is close to the opposite of representative.
+        if suspicious_only:
+            pos = row["sus_pos"]
+            pos = eval(pos) if isinstance(pos, str) else pos
+        else:
+            pos = [i for i, _ in enumerate(films)]
         kf = div.get((seq, gid))
         for p in pos:
             if p >= len(films):
@@ -84,6 +100,8 @@ def build_tasks(exp, wq_path, seed_path, statuses, channel):
             film = films[p]
             ch = "FL" if "FL" in film else "BF"
             if channel != "both" and ch != channel:
+                continue
+            if films_filter and film not in films_filter:
                 continue
             if (film, lc) in seen:
                 continue
@@ -154,11 +172,18 @@ def main():
     ap.add_argument("--status", nargs="+", default=["good", "corrected", "unreviewed"])
     ap.add_argument("--channel", default="FL", choices=["FL", "BF", "both"])
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--films", nargs="+", default=None,
+                    help="restrict to these films (one HPC array task per film)")
+    ap.add_argument("--suspicious-only", action="store_true",
+                    help="use the work queue's sus_pos instead of every film the "
+                         "cell appears in; for repair runs, NOT for cohort runs")
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
-    tasks = build_tasks(a.exp, a.work_queue, a.seed, a.status, a.channel)
+    tasks = build_tasks(a.exp, a.work_queue, a.seed, a.status, a.channel,
+                        suspicious_only=a.suspicious_only,
+                        films_filter=set(a.films) if a.films else None)
     # good first, then corrected, then unreviewed
     order = {"good": 0, "corrected": 1, "unreviewed": 2}
     tasks.sort(key=lambda t: (order.get(t["status"], 9), t["film"], t["lc"]))

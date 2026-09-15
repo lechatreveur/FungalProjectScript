@@ -157,6 +157,8 @@ def main():
     ap.add_argument("--dense", type=Path, default=DEFAULT_DENSE)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--films", nargs="+", default=None,
+                    help="restrict to these films (one HPC array task per film)")
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
 
@@ -168,6 +170,8 @@ def main():
     for f in sorted(a.dense.glob("*/cell_*.csv")):
         film = f.parent.name
         if "FL" not in film or film not in order:
+            continue
+        if a.films and film not in set(a.films):
             continue
         try:
             lc = int(f.stem.split("_")[1])

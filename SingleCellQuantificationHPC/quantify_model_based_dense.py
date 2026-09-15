@@ -278,6 +278,8 @@ def main():
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--channel", default="FL", choices=["FL", "BF", "both"])
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--films", nargs="+", default=None,
+                    help="restrict to these films (one HPC array task per film)")
     ap.add_argument("--workers", type=int, default=1,
                     help="parallel worker processes; chunks stay contiguous so "
                          "each worker keeps its frame cache within one film")
@@ -288,6 +290,9 @@ def main():
     files = sorted(a.dense.glob("*/cell_*.csv"))
     if a.channel != "both":
         files = [f for f in files if (a.channel in f.parent.name)]
+    if a.films:
+        want = set(a.films)
+        files = [f for f in files if f.parent.name in want]
     if a.limit:
         files = files[:a.limit]
     # group by film so the frame cache is useful
