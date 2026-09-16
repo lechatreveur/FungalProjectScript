@@ -133,6 +133,11 @@ def main():
     ap.add_argument("--strips", type=Path, default=DEFAULT_STRIPS)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--no-strips", action="store_true")
+    ap.add_argument("--strips-mode", choices=("auto", "embed", "link"), default="auto",
+                    help="embed inlines each PNG (self-contained but large); "
+                         "link references them relatively (small page, must stay "
+                         "beside the strips folder); auto embeds up to 1200 "
+                         "datapoints and links above that")
     a = ap.parse_args()
 
     X_traj, X_feat, gids, labels, s_traj, s_feat = load_feature_constrained_data(
@@ -230,19 +235,42 @@ def main():
         f.write(json.dumps(traj, separators=(",", ":")))
         f.write(";\nvar STRIPS={};\n</script>\n")
 
+        # Two ways to carry the strips.
+        #
+        # "embed" inlines each PNG as base64, which keeps the page a single
+        # self-contained file. That is fine for a few hundred datapoints and
+        # impossible for a full cohort: 6,244 strips at ~85 KB are 0.53 GB on
+        # disk and about 0.7 GB once base64-expanded into one HTML file, which
+        # no browser will open comfortably.
+        #
+        # "link" writes a relative path instead and lets the browser fetch each
+        # strip on demand. The page is then ~10 MB and must sit next to the
+        # strips directory, which it does by default.
+        mode = a.strips_mode
+        if mode == "auto":
+            mode = "embed" if len(cells) <= 1200 else "link"
         if not a.no_strips:
             n = 0
+            rel = os.path.relpath(a.strips, a.out.parent)
             for c in cells:
                 p = a.strips / f"{c['gid']}.png"
                 if not p.exists():
                     continue
                 f.write('<script>STRIPS[')
                 f.write(json.dumps(c["gid"]))
-                f.write(']="data:image/png;base64,')
-                f.write(base64.b64encode(p.read_bytes()).decode())
-                f.write('";</script>\n')
+                if mode == "embed":
+                    f.write(']="data:image/png;base64,')
+                    f.write(base64.b64encode(p.read_bytes()).decode())
+                    f.write('";</script>\n')
+                else:
+                    f.write("]=")
+                    f.write(json.dumps(f"{rel}/{c['gid']}.png"))
+                    f.write(";</script>\n")
                 n += 1
-            print(f"embedded strips: {n}", flush=True)
+            print(f"strips ({mode}): {n}", flush=True)
+            if mode == "link":
+                print(f"  page references {rel}/ relatively; keep them together",
+                      flush=True)
 
         f.write(r"""<script>
 var is3D = true, selected = null;
