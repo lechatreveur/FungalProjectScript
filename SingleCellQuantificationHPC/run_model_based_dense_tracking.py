@@ -190,7 +190,17 @@ def main():
     if a.limit:
         tasks = tasks[:a.limit]
 
-    summary_path = a.out / "model_based_dense_summary.csv"
+    # One summary per film when the run is film-scoped. In a SLURM array every
+    # task shares --out, so a single fixed filename means 21 tasks overwrite
+    # each other and only the last one's summary survives — which is what
+    # happened to array 2460385 on 2026-09-15, losing the interval diagnostics
+    # (branch counts, division calls, scan confidence) for 20 of 21 films. The
+    # per-frame provenance was safe in the mask tables, but the interval view
+    # was not.
+    if a.films and len(a.films) == 1:
+        summary_path = a.out / f"model_based_dense_summary_{a.films[0]}.csv"
+    else:
+        summary_path = a.out / "model_based_dense_summary.csv"
     print(f"tasks: {len(tasks)} (film, cell) over statuses {a.status}, channel {a.channel}",
           flush=True)
     print(f"out:   {a.out}", flush=True)
