@@ -68,6 +68,7 @@ COLOR_AXES = [
     ("Periodicity", "Periodicity"), ("NC Score", "NC_score"),
     ("Model-only %", "model_only_pct"), ("Stage-3 GOOD %", "stage3_good_pct"),
     ("Division film", "is_division_film"), ("Lineage depth", "segment_depth"),
+    ("Cell cycle stage", "stage_min"),
 ]
 # Computed in the page from pol1_mid / pol2_mid / Periodicity / NC_score rather
 # than read from a column, because its thresholds are adjustable live.
@@ -219,6 +220,21 @@ def main():
     e2 = umap.UMAP(n_components=2, random_state=42, n_jobs=1).fit_transform(lat)
 
     feats = pd.read_csv(a.features_dir / "umap_features_m160.csv")
+    # Cell-cycle stage, from cell_cycle_regress_m160.py. `stage_source` marks
+    # whether the cell's division was actually detected (curated) or the stage
+    # comes from the regression (estimated, typical error ~49 min).
+    cyc = a.features_dir.parent / "cell_cycle" / "cell_cycle_stage_by_datapoint.csv"
+    if cyc.exists():
+        cc = pd.read_csv(cyc)[["cell_id", "stage_min", "stage_source"]]
+        feats = feats.merge(cc, on="cell_id", how="left")
+        n_cur = int((feats.stage_source == "curated").sum())
+        print(f"cell-cycle stage merged: {int(feats.stage_min.notna().sum())} "
+              f"datapoints ({n_cur} curated, "
+              f"{int(feats.stage_min.notna().sum()) - n_cur} estimated)", flush=True)
+    else:
+        feats["stage_min"] = np.nan
+        feats["stage_source"] = None
+        print("(no cell-cycle stage table; that axis will be empty)", flush=True)
     # the loader keys as M160_<global_cell_id>_<film>; rebuild that to join
     feats["loader_gid"] = ("M160_" + feats.global_cell_id.astype(str)
                            + "_" + feats.film.astype(str))
@@ -247,7 +263,7 @@ def main():
 
     meta_cols = ["film", "local_cid", "n_frames", "model_only_pct", "stage3_good_pct",
                  "segment_id", "segment_depth", "is_division_film", "div_frame",
-                 "div_bounce",
+                 "div_bounce", "stage_min", "stage_source",
                  "pol1_mid", "pol2_mid", "d", "dd", "Periodicity", "NC_score"]
     cells, color_arrays = [], {lab: [] for lab, _ in COLOR_AXES}
     for i, gid in enumerate(gids):
@@ -263,6 +279,7 @@ def main():
             seg=(None if pd.isna(r.get("segment_id")) else str(r["segment_id"])),
             par=(None if pd.isna(r.get("segment_parent")) else str(r["segment_parent"])),
             divf=bool(r.get("is_division_film", False)),
+            cur=bool(str(r.get("stage_source", "")) == "curated"),
             ord=int(order.get(str(r["film"]), 0)), i=len(cells),
             x3=float(e3[i, 0]), y3=float(e3[i, 1]), z3=float(e3[i, 2]),
             x2=float(e2[i, 0]), y2=float(e2[i, 1]),
@@ -298,6 +315,8 @@ def main():
                 '<input type="number" id="cmax" step="any" placeholder="max">\n')
         f.write('<span class="chk"><input type="checkbox" id="link-chk" checked>'
                 '<label for="link-chk" style="color:#cbd5e1">Link cell across films</label></span>\n')
+        f.write('<span class="chk"><input type="checkbox" id="cur-chk">'
+                '<label for="cur-chk" style="color:#cbd5e1">Curated stage only</label></span>\n')
         f.write('<div id="thr-row">'
                 '<span>pol1&ge;</span><input type="number" id="thr-pol1" step="any" value="4.04">'
                 '<span>pol2&ge;</span><input type="number" id="thr-pol2" step="any" value="2.0">'
@@ -447,6 +466,13 @@ function lineageOf(seg){
 
 function xy(c){ return is3D ? [c.x3, c.y3, c.z3] : [c.x2, c.y2, 0]; }
 
+// "Curated stage only" hides datapoints whose cell-cycle stage was estimated by
+// the regression rather than anchored on a detected division. It filters the
+// markers AND the link lines, so a lineage is not drawn through points that are
+// no longer shown.
+function curatedOnly(){ var e = document.getElementById('cur-chk'); return e && e.checked; }
+function shown(c){ return !curatedOnly() || c.cur; }
+
 function linkTraces(){
   if (!document.getElementById('link-chk').checked) return [];
   var dull = [], act = [];
@@ -461,15 +487,16 @@ function linkTraces(){
     }
   }
   Object.keys(GROUPS).forEach(function(k){
-    var g = GROUPS[k];
+    var g = GROUPS[k].filter(shown);
+    if (!g.length) return;
     var isSel = selected && (lin[k] || (!selected.seg && selected.gcid === g[0].gcid));
     var buf = isSel ? act : dull;
     // along the segment
     for (var i = 0; i < g.length - 1; i++) span(xy(g[i]), xy(g[i+1]), buf);
     // and out to each daughter's first point: this is the fork
     (KIDS[k] || []).forEach(function(kid){
-      var d = GROUPS[kid];
-      if (d && d.length) span(xy(g[g.length-1]), xy(d[0]), buf);
+      var d = (GROUPS[kid] || []).filter(shown);
+      if (d.length) span(xy(g[g.length-1]), xy(d[0]), buf);
     });
   });
   var out = [];
@@ -510,22 +537,23 @@ function renderPlot(){
     scale = 'Viridis';
     cbar = { title:{ text:key, side:'right' } };
   }
+  var VIS = CELLS.filter(shown);
   var markers = {
     type: is3D ? 'scatter3d' : 'scattergl', mode: 'markers',
-    x: CELLS.map(function(c){ return is3D ? c.x3 : c.x2; }),
-    y: CELLS.map(function(c){ return is3D ? c.y3 : c.y2; }),
-    text: CELLS.map(function(c){ return c.gid; }),
+    x: VIS.map(function(c){ return is3D ? c.x3 : c.x2; }),
+    y: VIS.map(function(c){ return is3D ? c.y3 : c.y2; }),
+    text: VIS.map(function(c){ return c.gid; }),
     hovertemplate: '%{text}<br>' + key + ': ' +
                    (isMode ? '%{customdata}' : '%{marker.color:.4g}') + '<extra></extra>',
-    customdata: isMode ? CELLS.map(function(c){ return MODE_LABELS[modeOf(c)]; }) : undefined,
+    customdata: isMode ? VIS.map(function(c){ return MODE_LABELS[modeOf(c)]; }) : undefined,
     marker: { size: is3D ? 4 : 6,
-              color: CELLS.map(function(c){ return isMode ? vals[c.i] : vals[c.i]; }),
+              color: VIS.map(function(c){ return vals[c.i]; }),
               colorscale: scale, cmin:cmin, cmax:cmax, showscale:true,
               colorbar: cbar,
               line:{ width:0.3, color:'#334155' } },
     showlegend: false
   };
-  if (is3D) markers.z = CELLS.map(function(c){ return c.z3; });
+  if (is3D) markers.z = VIS.map(function(c){ return c.z3; });
   var ax = { showgrid:true, gridcolor:'#e2e8f0', zeroline:false };
   var layout = { margin:{l:0,r:0,b:0,t:10}, autosize:true,
                  paper_bgcolor:'#fff', plot_bgcolor:'#fff', font:{color:'#475569',size:11},
@@ -579,6 +607,19 @@ function showCell(c){
              '<span class="val">' + (s.gid === c.gid ? 'here' : '') + '</span></div>';
       });
       h += '<p class="legend">Blue line on the map, fading light to dark in film order</p></div>';
+    }
+    if (c.meta.stage_min !== undefined && c.meta.stage_min !== null){
+      var isCur = (c.meta.stage_source === 'curated');
+      h += '<div class="card"><h2>Cell cycle stage</h2>' +
+           '<div class="stat"><span>stage</span><span class="val">' +
+           c.meta.stage_min.toFixed(0) + ' min ' +
+           (c.meta.stage_min <= 0 ? 'before' : 'after') + ' division' +
+           '<span class="qual-badge" style="background:' +
+           (isCur ? '#16a34a' : '#d97706') + '">' +
+           (isCur ? 'curated' : 'estimated') + '</span></span></div>' +
+           (isCur ? '' : '<p class="legend">regressed from area, length, septum '
+                       + 'and nuclear signals; typical error ~49 min</p>') +
+           '</div>';
     }
     var cat = modeOf(c);
     h += '<div class="card"><h2>Dynamic mode</h2><div class="stat"><span>classified as</span>' +
@@ -730,6 +771,7 @@ document.getElementById('color-select').addEventListener('change', function(){
 document.getElementById('cmin').addEventListener('change', renderPlot);
 document.getElementById('cmax').addEventListener('change', renderPlot);
 document.getElementById('link-chk').addEventListener('change', renderPlot);
+document.getElementById('cur-chk').addEventListener('change', renderPlot);
 ['thr-pol1','thr-pol2','thr-mono','thr-bi','thr-nc'].forEach(function(id){
   document.getElementById(id).addEventListener('input', debounce(renderPlot, 250));
 });
