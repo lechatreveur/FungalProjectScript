@@ -67,6 +67,7 @@ COLOR_AXES = [
     ("Pole Asymmetry (dd)", "dd"), ("Pole Distance (d)", "d"),
     ("Periodicity", "Periodicity"), ("NC Score", "NC_score"),
     ("Model-only %", "model_only_pct"), ("Stage-3 GOOD %", "stage3_good_pct"),
+    ("Division film", "is_division_film"), ("Lineage depth", "segment_depth"),
 ]
 
 CSS = """
@@ -172,6 +173,8 @@ def main():
                               p2=[round(float(v), 3) for v in g.pol2_int_corr])
 
     meta_cols = ["film", "local_cid", "n_frames", "model_only_pct", "stage3_good_pct",
+                 "segment_id", "segment_depth", "is_division_film", "div_frame",
+                 "div_bounce",
                  "pol1_mid", "pol2_mid", "d", "dd", "Periodicity", "NC_score"]
     cells, color_arrays = [], {lab: [] for lab, _ in COLOR_AXES}
     for i, gid in enumerate(gids):
@@ -182,6 +185,11 @@ def main():
             r = r.iloc[0]
         cells.append(dict(
             gid=str(r["cell_id"]), gcid=str(r["global_cell_id"]),
+            # lineage: a datapoint belongs to one SEGMENT of the mother/daughter
+            # tree. Links run along a segment and then fork to its daughters.
+            seg=(None if pd.isna(r.get("segment_id")) else str(r["segment_id"])),
+            par=(None if pd.isna(r.get("segment_parent")) else str(r["segment_parent"])),
+            divf=bool(r.get("is_division_film", False)),
             ord=int(order.get(str(r["film"]), 0)), i=len(cells),
             x3=float(e3[i, 0]), y3=float(e3[i, 1]), z3=float(e3[i, 2]),
             x2=float(e2[i, 0]), y2=float(e2[i, 1]),
@@ -277,10 +285,35 @@ var is3D = true, selected = null;
 var plotDiv = document.getElementById('plot-div');
 var NSEG = 6;   // segments per link, for the opacity ramp
 
-// global cell -> its datapoints, in the order the cell was imaged
-var GROUPS = {};
-CELLS.forEach(function(c){ (GROUPS[c.gcid] = GROUPS[c.gcid] || []).push(c); });
-Object.keys(GROUPS).forEach(function(k){ GROUPS[k].sort(function(a,b){ return a.ord - b.ord; }); });
+// Lineage tree: datapoints grouped by SEGMENT, in the order they were imaged.
+// A segment is a stretch of one cell's life between divisions; its daughters
+// hang off its end. Linking by segment rather than by global_cell_id is what
+// makes a division draw as a fork instead of two overlapping paths.
+var GROUPS = {}, KIDS = {};
+CELLS.forEach(function(c){
+  var k = c.seg || ("gc:" + c.gcid);
+  (GROUPS[k] = GROUPS[k] || []).push(c);
+});
+Object.keys(GROUPS).forEach(function(k){
+  GROUPS[k].sort(function(a,b){ return a.ord - b.ord; });
+  var p = GROUPS[k][0].par;
+  if (p) (KIDS[p] = KIDS[p] || []).push(k);
+});
+
+// every segment in the same lineage as this one: ancestors and descendants
+function lineageOf(seg){
+  if (!seg) return {};
+  var out = {}, stack = [seg];
+  while (stack.length){
+    var s = stack.pop();
+    if (out[s]) continue;
+    out[s] = 1;
+    (KIDS[s] || []).forEach(function(k){ stack.push(k); });
+    var g = GROUPS[s];
+    if (g && g[0].par) stack.push(g[0].par);
+  }
+  return out;
+}
 
 function xy(c){ return is3D ? [c.x3, c.y3, c.z3] : [c.x2, c.y2, 0]; }
 
@@ -288,20 +321,26 @@ function linkTraces(){
   if (!document.getElementById('link-chk').checked) return [];
   var dull = [], act = [];
   for (var s = 0; s < NSEG; s++){ dull.push({x:[],y:[],z:[]}); act.push({x:[],y:[],z:[]}); }
-  Object.keys(GROUPS).forEach(function(gc){
-    var g = GROUPS[gc];
-    if (g.length < 2) return;
-    var isSel = selected && selected.gcid === gc;
-    var buf = isSel ? act : dull;
-    for (var i = 0; i < g.length - 1; i++){
-      var A = xy(g[i]), B = xy(g[i+1]);
-      for (var s = 0; s < NSEG; s++){
-        var f0 = s/NSEG, f1 = (s+1)/NSEG;
-        buf[s].x.push(A[0]+f0*(B[0]-A[0]), A[0]+f1*(B[0]-A[0]), null);
-        buf[s].y.push(A[1]+f0*(B[1]-A[1]), A[1]+f1*(B[1]-A[1]), null);
-        buf[s].z.push(A[2]+f0*(B[2]-A[2]), A[2]+f1*(B[2]-A[2]), null);
-      }
+  var lin = selected ? lineageOf(selected.seg) : {};
+  function span(A, B, buf){
+    for (var s = 0; s < NSEG; s++){
+      var f0 = s/NSEG, f1 = (s+1)/NSEG;
+      buf[s].x.push(A[0]+f0*(B[0]-A[0]), A[0]+f1*(B[0]-A[0]), null);
+      buf[s].y.push(A[1]+f0*(B[1]-A[1]), A[1]+f1*(B[1]-A[1]), null);
+      buf[s].z.push(A[2]+f0*(B[2]-A[2]), A[2]+f1*(B[2]-A[2]), null);
     }
+  }
+  Object.keys(GROUPS).forEach(function(k){
+    var g = GROUPS[k];
+    var isSel = selected && (lin[k] || (!selected.seg && selected.gcid === g[0].gcid));
+    var buf = isSel ? act : dull;
+    // along the segment
+    for (var i = 0; i < g.length - 1; i++) span(xy(g[i]), xy(g[i+1]), buf);
+    // and out to each daughter's first point: this is the fork
+    (KIDS[k] || []).forEach(function(kid){
+      var d = GROUPS[kid];
+      if (d && d.length) span(xy(g[g.length-1]), xy(d[0]), buf);
+    });
   });
   var out = [];
   function emit(buf, rgb, w0, lo, hi){
@@ -367,12 +406,20 @@ function bindClick(){
     var c = CELLS.find(function(q){ return q.gid === pt.text; });
     if (!c) return;
     selected = c;
-    var sibs = GROUPS[c.gcid] || [];
+    var segKey = c.seg || ("gc:" + c.gcid);
+    var sibs = GROUPS[segKey] || [];
+    var kids = KIDS[segKey] || [];
     var mo = c.meta.model_only_pct, b = qualBadge(mo);
     var h = '<div class="card"><h2>' + c.gid + '</h2>';
     h += '<div class="stat"><span>global cell</span><span class="val">' + c.gcid + '</span></div>';
-    h += '<div class="stat"><span>this cell appears in</span><span class="val">' +
+    h += '<div class="stat"><span>segment spans</span><span class="val">' +
          sibs.length + ' film' + (sibs.length === 1 ? '' : 's') + '</span></div>';
+    h += '<div class="stat"><span>divides into</span><span class="val">' +
+         (kids.length ? kids.length + ' daughters' : 'no division seen') + '</span></div>';
+    if (c.divf) h += '<div class="stat"><span>division film</span>' +
+         '<span class="val" style="color:#dc2626">yes, frame ' +
+         (c.meta.div_frame === null ? '?' : Math.round(c.meta.div_frame)) +
+         ' (excluded from AE training)</span></div>';
     h += '<div class="stat"><span>mask provenance</span><span class="val">' +
          (mo === null ? 'N/A' : mo.toFixed(2) + '%') +
          '<span class="qual-badge" style="background:' + b.col + '">' + b.txt + '</span></span></div>';

@@ -41,6 +41,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -94,6 +95,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=EPOCHS)
     ap.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     ap.add_argument("--mps", action="store_true", help="use MPS instead of CPU")
+    ap.add_argument("--keep-division-films", action="store_true",
+                    help="train on the dividing films too (default: exclude them)")
     a = ap.parse_args()
 
     random.seed(SEED)
@@ -105,6 +108,27 @@ def main():
         {"M160": str(a.features_dir)})
     print(f"datapoints: {len(gids)}   trajectory {X_traj.shape}   features {X_feat.shape}",
           flush=True)
+
+    # Drop the film in which the cell divides. Its Pol1/Pol2 traces are
+    # dominated by the mother-to-daughter step — area halves, the septum and the
+    # second nucleus vanish — so the trajectory describes a tracking transition
+    # rather than polarity dynamics, and it is noise for a model meant to learn
+    # the latter. The division film is still identified and kept in the feature
+    # table; it is excluded only from TRAINING.
+    if not a.keep_division_films:
+        feats = pd.read_csv(Path(a.features_dir) / "umap_features_m160.csv")
+        if "is_division_film" in feats.columns:
+            drop = {f"M160_{r.global_cell_id}_{r.film}"
+                    for _, r in feats[feats.is_division_film.fillna(False)].iterrows()}
+            keep = np.array([g not in drop for g in gids], bool)
+            n_drop = int((~keep).sum())
+            X_traj, X_feat = X_traj[keep], X_feat[keep]
+            gids = [g for g, k in zip(gids, keep) if k]
+            labels = [l for l, k in zip(labels, keep) if k]
+            print(f"excluded division films: {n_drop}  -> training on {len(gids)}",
+                  flush=True)
+        else:
+            print("  (no is_division_film column; nothing excluded)", flush=True)
     if len(gids) == 0:
         raise SystemExit("no datapoints survived the loader; check trace lengths are 101")
 

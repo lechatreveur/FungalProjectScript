@@ -67,6 +67,7 @@ for _p in (str(_HERE), str(_REPO)):
 from SingleCellDataAnalysis.signal_analysis import quantify_all_cells
 from SingleCellDataAnalysis.signal_cor import quantify_all_cells_acor
 from SingleCellDataAnalysis.PCA_utils import load_experiment_features
+import lineage_m160 as LIN
 
 EXP_NAME = "2026_08_28_M160"
 DEFAULT_EXP = Path("/Volumes/X10 Pro/Movies") / EXP_NAME
@@ -108,7 +109,51 @@ def build_id_map(exp_dir):
     return out, order
 
 
-def load_stacked(quant_dir, id_map, film_order):
+PRE, POST, GAP = 12, 12, 2      # frames each side of a candidate drop
+BOUNCE_MAX = 0.70               # a division does not recover; a missegmentation does
+AREA_MAX = 0.75                 # the drop itself must be real
+
+
+def division_event(prim):
+    """Does this film contain a TRUE division, and at which frame?
+
+    A candidate is a frame where the median area over the following 12 frames
+    falls to <= AREA_MAX of the preceding 12. What separates a division from a
+    missegmentation is not the depth of that drop — 0.53 against 0.59, barely
+    anything — but whether the area comes back. A missegmentation recovers; a
+    division does not. Measured on 208 known dividing films against 919
+    negatives, `bounce <= 0.70` gives precision 0.89 at recall 0.62, against
+    0.77 for the old area-only criterion.
+
+    nu_dis and septum are deliberately NOT used. Both collapse in either class,
+    because a missegmentation also loses part of the object, so they separate
+    mother-state from daughter-state but not division from artefact.
+    """
+    d = prim.sort_values("time_point")
+    t = d["time_point"].values.astype(float)
+    area = d["cell_area"].values.astype(float)
+    best = None
+    for i in range(PRE, len(t) - POST):
+        a_pre = np.nanmedian(area[i - PRE:i])
+        a_post = np.nanmedian(area[i + GAP:i + GAP + POST])
+        if not np.isfinite(a_pre) or a_pre <= 0:
+            continue
+        ratio = a_post / a_pre
+        if ratio > AREA_MAX:
+            continue
+        window = area[i + GAP:i + GAP + POST]
+        bounce = np.nanmax(window) / a_pre if np.any(np.isfinite(window)) else np.nan
+        if best is None or ratio < best["area_ratio"]:
+            best = dict(t=float(t[i]), area_ratio=float(ratio), bounce=float(bounce))
+    if best is None:
+        return dict(div_frame=np.nan, div_area_ratio=np.nan,
+                    div_bounce=np.nan, is_division_film=False)
+    return dict(div_frame=best["t"], div_area_ratio=round(best["area_ratio"], 4),
+                div_bounce=round(best["bounce"], 4),
+                is_division_film=bool(best["bounce"] <= BOUNCE_MAX))
+
+
+def load_stacked(quant_dir, id_map, film_order, point_seg=None):
     """Primary-object rows for every quantified cell, cytoplasm-corrected, on a
     sequence-continuous time axis."""
     rows, meta, unmapped = [], [], 0
@@ -144,8 +189,12 @@ def load_stacked(quant_dir, id_map, film_order):
 
         n = len(prim)
         n_model = int(prim["model_only"].fillna(False).astype(bool).sum())
+        seg = (point_seg or {}).get((film, lc), {})
         meta.append(dict(
             cell_id=datapoint_id(gid, film), global_cell_id=gid,
+            segment_id=seg.get("id"), segment_parent=seg.get("parent"),
+            segment_depth=seg.get("depth"),
+            **division_event(prim),
             film=film, local_cid=lc, n_frames=n,
             n_model_only=n_model,
             model_only_pct=round(100.0 * n_model / n, 2) if n else np.nan,
@@ -180,6 +229,12 @@ def main():
     ap.add_argument("--quant", type=Path, default=DEFAULT_QUANT)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--work-queue", type=Path,
+                    default=Path("/Users/user/Documents/Python_Scripts/"
+                                 "FungalProjectScript/SingleCellQuantificationHPC/"
+                                 "scratch/work_queue_all_statuses.csv"))
+    ap.add_argument("--status", nargs="+",
+                    default=["good", "corrected", "unreviewed"])
     a = ap.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
@@ -189,7 +244,21 @@ def main():
     print(f"id map: {len(id_map)} (film, local_cell_id) -> global_cell_id; "
           f"{len(film_order)} FL films ordered", flush=True)
 
-    stacked, meta, unmapped = load_stacked(a.quant, id_map, film_order)
+    # Lineage: a mother forks into daughters, so each (film, cell) belongs to
+    # exactly one segment of the tree rather than to a global_cell_id that may
+    # be shared with a sister (see lineage_m160).
+    wq = pd.read_csv(a.work_queue) if a.work_queue and Path(a.work_queue).exists() else None
+    keep = set(wq[wq.status.isin(a.status)].gid) if wq is not None else None
+    pmap, segs, edges, notes = LIN.resolve_experiment(a.exp, keep_gids=keep)
+    point_seg = {pt: dict(id=sid, parent=segs[sid]["parent"], depth=segs[sid]["depth"])
+                 for pt, sid in pmap.items()}
+    print(f"lineage: {len(segs)} segments, {len(edges)} edges, "
+          f"{sum(1 for s in segs.values() if s['depth'] > 0)} daughters", flush=True)
+    if notes.get("excluded_gids"):
+        print(f"  excluded (re-converging tracks): {len(notes['excluded_gids'])} gids",
+              flush=True)
+
+    stacked, meta, unmapped = load_stacked(a.quant, id_map, film_order, point_seg)
     if a.limit:
         keep = meta.cell_id.unique()[:a.limit]
         meta = meta[meta.cell_id.isin(keep)]
