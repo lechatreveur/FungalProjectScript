@@ -199,8 +199,16 @@ def main():
         {"M160": str(a.features_dir)})
     print(f"datapoints: {len(gids)}", flush=True)
 
-    model = MultimodalAutoencoder3D()
-    model.load_state_dict(torch.load(a.model, map_location="cpu"))
+    # Read the latent dimension out of the checkpoint itself rather than
+    # hardcoding it, so the explorer can never drift from whatever the trainer
+    # last produced. encoder_fc's final Linear maps 128 -> latent_dim.
+    sd = torch.load(a.model, map_location="cpu")
+    lat_dim = next((v.shape[0] for k, v in sd.items()
+                    if k.startswith("encoder_fc") and k.endswith("weight")
+                    and v.ndim == 2 and v.shape[1] == 128), 3)
+    print(f"checkpoint latent_dim: {lat_dim}", flush=True)
+    model = MultimodalAutoencoder3D(latent_dim=int(lat_dim))
+    model.load_state_dict(sd)
     model.eval()
     with torch.no_grad():
         _, _, lat = model(torch.from_numpy(X_traj).float(),
@@ -735,6 +743,7 @@ renderPlot();
                 created_by="SingleCellQuantificationHPC/build_umap_html_m160.py",
                 experiment=EXP_NAME, standalone=True,
                 umap_fit_on="autoencoder latents (fc_ae_3d_m160.pth)",
+                latent_dim=int(lat_dim),
                 model=str(a.model), n_datapoints=len(cells),
                 n_global_cells_multi_film=int(n_multi),
                 colour_limits="2nd-98th percentile per axis, manually overridable",

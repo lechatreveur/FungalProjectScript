@@ -67,6 +67,12 @@ LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-5
 ALPHA = 1.0          # weight on feature reconstruction, as in the reference
 SEED = 42
+# Chosen by sweep_fc_ae_m160.py on 6,184 M160 datapoints: the elbow sits at
+# 5-6, the trajectory term is flat past 5 (marginal gains 3.5%, 3.0%, then
+# noise), and beyond that the extra capacity goes into reconstructing the
+# eleven engineered features rather than the dynamics. 6 also gives UMAP a
+# real space to reduce, instead of the 3-to-3 near-identity it had before.
+LATENT_DIM = 6
 MPS_CAP_GIB = 10.0   # P4: cap MPS on an 18 GB workstation, ~75% of the device limit
 
 
@@ -95,6 +101,7 @@ def main():
     ap.add_argument("--epochs", type=int, default=EPOCHS)
     ap.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     ap.add_argument("--mps", action="store_true", help="use MPS instead of CPU")
+    ap.add_argument("--latent-dim", type=int, default=LATENT_DIM)
     ap.add_argument("--keep-division-films", action="store_true",
                     help="train on the dividing films too (default: exclude them)")
     a = ap.parse_args()
@@ -139,7 +146,7 @@ def main():
     device = pick_device(force_cpu=not a.mps)
     print(f"device: {device}", flush=True)
 
-    model = MultimodalAutoencoder3D().to(device)
+    model = MultimodalAutoencoder3D(latent_dim=a.latent_dim).to(device)
     opt = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     crit = nn.MSELoss()
 
@@ -176,7 +183,10 @@ def main():
         created_by="SingleCellQuantificationHPC/train_fc_ae_m160.py",
         experiment=EXP_NAME, standalone=True,
         note="trained on M160 only; latents are not comparable with the Sept17 model",
-        model="MultimodalAutoencoder3D(seq_len=101, in_channels=2, num_features=11, latent_dim=3)",
+        model=(f"MultimodalAutoencoder3D(seq_len=101, in_channels=2, "
+               f"num_features=11, latent_dim={a.latent_dim})"),
+        latent_dim=int(a.latent_dim),
+        division_films_excluded=bool(not a.keep_division_films),
         features_dir=str(a.features_dir), n_datapoints=int(len(gids)),
         epochs=a.epochs, batch_size=a.batch_size, lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY, alpha=ALPHA, seed=SEED, device=str(device),
