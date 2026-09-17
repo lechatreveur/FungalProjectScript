@@ -69,6 +69,9 @@ COLOR_AXES = [
     ("Model-only %", "model_only_pct"), ("Stage-3 GOOD %", "stage3_good_pct"),
     ("Division film", "is_division_film"), ("Lineage depth", "segment_depth"),
 ]
+# Computed in the page from pol1_mid / pol2_mid / Periodicity / NC_score rather
+# than read from a column, because its thresholds are adjustable live.
+MODE_AXIS = "Dynamic mode"
 
 CSS = """
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -89,7 +92,19 @@ CSS = """
     .stat:last-child { border-bottom:none; }
     .val { font-weight:700; color:#0284c7; font-family:monospace; }
     .qual-badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; color:#fff; margin-left:6px; }
-    #traj-div { width:100%; height:300px; }
+    #traj-div, #acor-div { width:100%; height:260px; margin-top:6px; }
+    /* The trajectories stay visible while the rest of the sidebar scrolls;
+       the negative top offsets the sidebar's own padding so it sits flush. */
+    .sticky-card { position:sticky; top:-20px; z-index:10; background:#fff !important;
+                   border:1px solid #cbd5e1; box-shadow:0 10px 15px -3px rgba(0,0,0,0.08);
+                   margin-left:-4px; margin-right:-4px; padding-left:16px; padding-right:16px; }
+    .collapse-head { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+    .collapse-head h2 { margin:0; border:none; padding:0; }
+    .formula { font-size:0.72rem; color:#334155; background:#f1f5f9; padding:8px;
+               border-radius:4px; border:1px solid #e2e8f0; line-height:1.6; margin-top:8px; }
+    #thr-row { display:none; gap:6px; align-items:center; flex-wrap:wrap; }
+    #thr-row input { width:64px; }
+    #thr-row span { color:#94a3b8; font-size:0.72rem; }
     .legend { font-size:0.7rem; color:#64748b; text-align:center; margin-top:3px; }
 """
 
@@ -109,6 +124,45 @@ def robust_limits(vals, lo_pct=2.0, hi_pct=98.0):
     if hi <= lo:
         hi = lo + 1.0
     return lo, hi
+
+
+N_LAGS = 40      # positive lags shown in the ACF card
+
+
+def detrended_acf(g):
+    """Normalised autocorrelation of each detrended pole trace, positive lags.
+
+    Matches `signal_cor`: detrend, full autocorrelation, divide by the zero-lag
+    value, then keep lags 1 upward — which is why the fitted model's `acf0` is
+    the value at lag 1, not lag 0.
+
+    The canonical detrend is `model_selector_with_threshold`, an AIC model
+    selection that costs as much as the whole feature build. Here the trend is
+    removed linearly instead, which is what that selector reduces to for the
+    common case and is close for the rest. The FITTED curve drawn over it comes
+    from the stored canonical parameters, so a visible gap between raw and fit
+    means the two detrends disagreed for that cell.
+    """
+    out = {}
+    t = g["time_point"].values.astype(float)
+    for key, col in (("a1", "pol1_int_corr"), ("a2", "pol2_int_corr")):
+        y = g[col].values.astype(float)
+        ok = np.isfinite(y) & np.isfinite(t)
+        if ok.sum() < 8:
+            out[key] = []
+            continue
+        yy, tt = y[ok], t[ok]
+        try:
+            m, c = np.polyfit(tt, yy, 1)
+            d = yy - (m * tt + c)
+        except Exception:
+            d = yy - np.nanmean(yy)
+        ac = np.correlate(d, d, mode="full")
+        mid = len(ac) // 2
+        z = ac[mid]
+        ac = ac / z if z > 1e-8 else np.zeros_like(ac)
+        out[key] = [round(float(v), 3) for v in ac[mid + 1: mid + 1 + N_LAGS]]
+    return out
 
 
 def film_order(exp_dir):
@@ -165,12 +219,23 @@ def main():
 
     stacked = pd.read_csv(a.features_dir / "unaligned_pairs_quant"
                           / "stacked_gfp1_gfp2_for_unaligned_pairs.csv")
-    traj = {}
+    traj, acf = {}, {}
     for cid, g in stacked.groupby("cell_id"):
         g = g.sort_values("time_point")
+        acf[str(cid)] = detrended_acf(g)
         traj[str(cid)] = dict(t=[int(v) for v in g.time_point],
                               p1=[round(float(v), 3) for v in g.pol1_int_corr],
                               p2=[round(float(v), 3) for v in g.pol2_int_corr])
+
+    # fit parameters for the ACF card, straight from the canonical acor table
+    acor = pd.read_csv(a.features_dir / "unaligned_pairs_quant"
+                       / "acor_detrended_results.csv").set_index("cell_id")
+    FITC = ["pol1_A1", "pol1_tau1", "pol1_tau2", "pol1_f", "pol1_phi", "pol1_C",
+            "pol1_acf0", "pol2_A1", "pol2_tau1", "pol2_tau2", "pol2_f", "pol2_phi",
+            "pol2_C", "pol2_acf0", "precision_sum", "freq_distance_sum", "NC_score"]
+    FITC = [c for c in FITC if c in acor.columns]
+    fitp = {str(i): {c: (None if pd.isna(r[c]) else round(float(r[c]), 5)) for c in FITC}
+            for i, r in acor.iterrows()}
 
     meta_cols = ["film", "local_cid", "n_frames", "model_only_pct", "stage3_good_pct",
                  "segment_id", "segment_depth", "is_division_film", "div_frame",
@@ -210,7 +275,8 @@ def main():
           flush=True)
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    opts = "".join(f'<option value="{lab}">{lab}</option>' for lab, _ in COLOR_AXES)
+    opts = ('<option value="%s">%s</option>' % (MODE_AXIS, MODE_AXIS)
+            + "".join(f'<option value="{lab}">{lab}</option>' for lab, _ in COLOR_AXES))
     a.out.parent.mkdir(parents=True, exist_ok=True)
 
     with open(a.out, "w", encoding="utf-8") as f:
@@ -224,6 +290,13 @@ def main():
                 '<input type="number" id="cmax" step="any" placeholder="max">\n')
         f.write('<span class="chk"><input type="checkbox" id="link-chk" checked>'
                 '<label for="link-chk" style="color:#cbd5e1">Link cell across films</label></span>\n')
+        f.write('<div id="thr-row">'
+                '<span>pol1&ge;</span><input type="number" id="thr-pol1" step="any" value="4.04">'
+                '<span>pol2&ge;</span><input type="number" id="thr-pol2" step="any" value="2.0">'
+                '<span>mono osc&gt;</span><input type="number" id="thr-mono" step="any" value="5.0">'
+                '<span>bi osc&gt;</span><input type="number" id="thr-bi" step="any" value="6.5">'
+                '<span>NC&le;</span><input type="number" id="thr-nc" step="any" value="0">'
+                '</div>\n')
         f.write(f'<div class="note"><b>Standalone</b> &mdash; autoencoder and UMAP both fit on '
                 f'M160 alone ({len(cells)} datapoints, {n_multi} cells spanning &ge;2 films).<br>'
                 f'UMAP on AE latents. Colour limits 2nd&ndash;98th pct unless overridden. {stamp}.</div>\n')
@@ -241,6 +314,10 @@ def main():
         f.write(json.dumps(limits, separators=(",", ":")))
         f.write(";\nvar TRAJ=")
         f.write(json.dumps(traj, separators=(",", ":")))
+        f.write(";\nvar ACF=")
+        f.write(json.dumps(acf, separators=(",", ":")))
+        f.write(";\nvar FITP=")
+        f.write(json.dumps(fitp, separators=(",", ":")))
         f.write(";\nvar STRIPS={};\n</script>\n")
 
         # Two ways to carry the strips.
@@ -282,6 +359,37 @@ def main():
 
         f.write(r"""<script>
 var is3D = true, selected = null;
+var MODE_AXIS = "Dynamic mode";
+
+// Dynamic-mode thresholds. Defaults are the M156 explorer's; NC is new — a
+// pole pair that oscillates in antiphase has a negative NC score, so requiring
+// NC <= thr stops a noisy but in-phase pair being called oscillatory.
+var THR = { pol1: 4.04, pol2: 2.0, mono: 5.0, bi: 6.5, nc: 0.0 };
+var MODE_LABELS = ["Non-polarized", "Monopolar", "Monopolar Osc", "Bipolar", "Bipolar Osc"];
+var MODE_COLORS = ["#94a3b8", "#f59e0b", "#ef4444", "#10b981", "#3b82f6"];
+var MODE_SCALE = [[0.0,'#94a3b8'],[0.2,'#94a3b8'],[0.2,'#f59e0b'],[0.4,'#f59e0b'],
+                  [0.4,'#ef4444'],[0.6,'#ef4444'],[0.6,'#10b981'],[0.8,'#10b981'],
+                  [0.8,'#3b82f6'],[1.0,'#3b82f6']];
+
+function getCategory(p1, p2, per, nc){
+  if (p1 === null || p1 === undefined || p1 < THR.pol1) return 0;   // Non-polarized
+  var osc = (nc !== null && nc !== undefined) ? (nc <= THR.nc) : true;
+  if (p2 === null || p2 === undefined || p2 < THR.pol2)
+    return (per > THR.mono && osc) ? 2 : 1;                          // Monopolar (Osc)
+  return (per > THR.bi && osc) ? 4 : 3;                              // Bipolar (Osc)
+}
+function modeOf(c){
+  return getCategory(c.meta.pol1_mid, c.meta.pol2_mid,
+                     c.meta.Periodicity, c.meta.NC_score);
+}
+function readThresholds(){
+  var g = function(id, d){ var v = parseFloat(document.getElementById(id).value);
+                           return isNaN(v) ? d : v; };
+  THR.pol1 = g('thr-pol1', 4.04); THR.pol2 = g('thr-pol2', 2.0);
+  THR.mono = g('thr-mono', 5.0);  THR.bi   = g('thr-bi', 6.5);
+  THR.nc   = g('thr-nc', 0.0);
+}
+function debounce(fn, ms){ var t; return function(){ clearTimeout(t); t = setTimeout(fn, ms); }; }
 var plotDiv = document.getElementById('plot-div');
 var NSEG = 6;   // segments per link, for the opacity ramp
 
@@ -362,19 +470,36 @@ function linkTraces(){
 
 function renderPlot(){
   var key = document.getElementById('color-select').value;
-  var vals = COLORS[key], lim = LIMITS[key];
-  var mn = parseFloat(document.getElementById('cmin').value);
-  var mx = parseFloat(document.getElementById('cmax').value);
-  var cmin = isNaN(mn) ? lim[0] : mn, cmax = isNaN(mx) ? lim[1] : mx;
+  var isMode = (key === MODE_AXIS);
+  document.getElementById('thr-row').style.display = isMode ? 'flex' : 'none';
+  var vals, cmin, cmax, scale, cbar;
+  if (isMode){
+    readThresholds();
+    vals = CELLS.map(modeOf);
+    cmin = -0.5; cmax = 4.5; scale = MODE_SCALE;
+    cbar = { title:{ text:'Mode', side:'right' }, tickmode:'array',
+             tickvals:[0,1,2,3,4], ticktext:MODE_LABELS };
+  } else {
+    vals = COLORS[key];
+    var lim = LIMITS[key];
+    var mn = parseFloat(document.getElementById('cmin').value);
+    var mx = parseFloat(document.getElementById('cmax').value);
+    cmin = isNaN(mn) ? lim[0] : mn; cmax = isNaN(mx) ? lim[1] : mx;
+    scale = 'Viridis';
+    cbar = { title:{ text:key, side:'right' } };
+  }
   var markers = {
     type: is3D ? 'scatter3d' : 'scattergl', mode: 'markers',
     x: CELLS.map(function(c){ return is3D ? c.x3 : c.x2; }),
     y: CELLS.map(function(c){ return is3D ? c.y3 : c.y2; }),
     text: CELLS.map(function(c){ return c.gid; }),
-    hovertemplate: '%{text}<br>' + key + ': %{marker.color:.4g}<extra></extra>',
-    marker: { size: is3D ? 4 : 6, color: CELLS.map(function(c){ return vals[c.i]; }),
-              colorscale:'Viridis', cmin:cmin, cmax:cmax, showscale:true,
-              colorbar:{ title:{ text:key, side:'right' } },
+    hovertemplate: '%{text}<br>' + key + ': ' +
+                   (isMode ? '%{customdata}' : '%{marker.color:.4g}') + '<extra></extra>',
+    customdata: isMode ? CELLS.map(function(c){ return MODE_LABELS[modeOf(c)]; }) : undefined,
+    marker: { size: is3D ? 4 : 6,
+              color: CELLS.map(function(c){ return isMode ? vals[c.i] : vals[c.i]; }),
+              colorscale: scale, cmin:cmin, cmax:cmax, showscale:true,
+              colorbar: cbar,
               line:{ width:0.3, color:'#334155' } },
     showlegend: false
   };
@@ -398,13 +523,7 @@ function qualBadge(p){
 }
 
 var bound = false;
-function bindClick(){
-  if (bound) return; bound = true;
-  plotDiv.on('plotly_click', function(ev){
-    var pt = ev.points[0];
-    if (!pt || pt.data.mode === 'lines') return;
-    var c = CELLS.find(function(q){ return q.gid === pt.text; });
-    if (!c) return;
+function showCell(c){
     selected = c;
     var segKey = c.seg || ("gc:" + c.gcid);
     var sibs = GROUPS[segKey] || [];
@@ -439,8 +558,22 @@ function bindClick(){
       });
       h += '<p class="legend">Blue line on the map, fading light to dark in film order</p></div>';
     }
-    h += '<div class="card"><h2>Polarity Site Dynamics</h2><div id="traj-div"></div>' +
+    var cat = modeOf(c);
+    h += '<div class="card"><h2>Dynamic mode</h2><div class="stat"><span>classified as</span>' +
+         '<span class="val"><span class="qual-badge" style="background:' + MODE_COLORS[cat] +
+         '">' + MODE_LABELS[cat] + '</span></span></div>' +
+         '<div class="stat"><span>Periodicity</span><span class="val">' +
+         (c.meta.Periodicity === null ? 'N/A' : c.meta.Periodicity.toFixed(4)) + '</span></div>' +
+         '<div class="stat"><span>NC score</span><span class="val">' +
+         (c.meta.NC_score === null ? 'N/A' : c.meta.NC_score.toFixed(4)) + '</span></div></div>';
+    h += '<div class="card sticky-card"><h2>Polarity Site Dynamics</h2><div id="traj-div"></div>' +
          '<p class="legend">Red: Pol1 &nbsp;|&nbsp; Blue: Pol2 &nbsp;|&nbsp; grey = cytoplasm level</p></div>';
+    h += '<div class="card"><div class="collapse-head" id="acor-head">' +
+         '<h2>Autocorrelation &amp; Fit Details</h2>' +
+         '<span id="acor-ind" style="color:#64748b">&#9658;</span></div>' +
+         '<div id="acor-body" style="display:none"><div id="acor-div"></div>' +
+         '<div class="formula" id="acor-formula"></div>' +
+         '<p class="legend">Faint: measured ACF &nbsp;|&nbsp; dashed: fitted model</p></div></div>';
     if (STRIPS[c.gid]) h += '<div class="card"><h2>Cell Timelapse Strip</h2>' +
       '<img src="' + STRIPS[c.gid] + '" style="width:100%;image-rendering:pixelated;border-radius:4px;"/>' +
       '<p class="legend">Frame 0 → 100 (top → bottom)</p></div>';
@@ -459,9 +592,113 @@ function bindClick(){
          showlegend:false, paper_bgcolor:'transparent', plot_bgcolor:'transparent'},
         {displayModeBar:false, responsive:true});
     }
-    renderPlot();
+    setupAcor(c);
+}
+
+function bindClick(){
+  if (bound) return; bound = true;
+  plotDiv.on('plotly_click', function(ev){
+    var pt = ev.points[0];
+    if (!pt || pt.data.mode === 'lines') return;
+    var c = CELLS.find(function(q){ return q.gid === pt.text; });
+    if (c){ showCell(c); renderPlot(); }
   });
 }
+
+// Autocorrelation card. Collapsed by default, and the plot is only drawn the
+// first time it is opened, so thousands of hidden Plotly canvases are never
+// created.
+function fitModel(lag, A1, tau1, tau2, f, phi, C, acf0){
+  var A2 = Math.min(Math.max((acf0 || 0) - (A1 || 0) - (C || 0), 0.0), 1.0);
+  var env = (A1 || 0) * Math.exp(-lag / (tau1 || 1)) +
+            A2 * Math.exp(-lag / (tau2 || 1)) + (C || 0);
+  return env * Math.cos(2 * Math.PI * (f || 0) * lag + (phi || 0));
+}
+function envText(fp, P){
+  var A1 = fp[P+'_A1'] || 0, C = fp[P+'_C'] || 0, acf0 = fp[P+'_acf0'] || 0;
+  var A2 = Math.min(Math.max(acf0 - A1 - C, 0), 1);
+  return A1.toFixed(3) + '&middot;e<sup>&minus;t/' + (fp[P+'_tau1']||1).toFixed(1) +
+         '</sup> + ' + A2.toFixed(3) + '&middot;e<sup>&minus;t/' +
+         (fp[P+'_tau2']||1).toFixed(1) + '</sup> + ' + C.toFixed(3);
+}
+function drawAcor(c){
+  var A = ACF[c.gid] || {}, fp = FITP[c.gid] || {};
+  var a1 = A.a1 || [], a2 = A.a2 || [];
+  var n = Math.max(a1.length, a2.length);
+  if (!n){
+    document.getElementById('acor-div').innerHTML =
+      '<p class="legend">no autocorrelation for this cell</p>';
+    return;
+  }
+  var lags = [], f1 = [], f2 = [];
+  for (var i = 0; i < n; i++){
+    var lag = i + 1;                       // positive lags start at 1
+    lags.push(lag);
+    f1.push(fitModel(lag, fp.pol1_A1, fp.pol1_tau1, fp.pol1_tau2, fp.pol1_f,
+                     fp.pol1_phi, fp.pol1_C, fp.pol1_acf0));
+    f2.push(fitModel(lag, fp.pol2_A1, fp.pol2_tau1, fp.pol2_tau2, fp.pol2_f,
+                     fp.pol2_phi, fp.pol2_C, fp.pol2_acf0));
+  }
+  Plotly.newPlot('acor-div', [
+    {x:lags, y:a1, name:'Pol1', mode:'lines', line:{color:'rgba(239,68,68,0.35)', width:2}},
+    {x:lags, y:f1, name:'Pol1 fit', mode:'lines', line:{color:'#ef4444', width:2, dash:'dash'}},
+    {x:lags, y:a2, name:'Pol2', mode:'lines', line:{color:'rgba(59,130,246,0.35)', width:2}},
+    {x:lags, y:f2, name:'Pol2 fit', mode:'lines', line:{color:'#3b82f6', width:2, dash:'dash'}}],
+   {margin:{l:44,r:10,b:34,t:8}, showlegend:false,
+    xaxis:{title:'lag (frames)', gridcolor:'#e2e8f0'},
+    yaxis:{title:'ACF', gridcolor:'#e2e8f0', zeroline:true, zerolinecolor:'#cbd5e1'},
+    paper_bgcolor:'transparent', plot_bgcolor:'transparent'},
+   {displayModeBar:false, responsive:true});
+
+  var ps = fp.precision_sum, fd = fp.freq_distance_sum;
+  var num = function(v){ return (v === null || v === undefined) ? '?' : v.toFixed(4); };
+  document.getElementById('acor-formula').innerHTML =
+    '<b>ACF(t) = envelope &middot; cos(2&pi;&middot;f&middot;t + &phi;)</b><br>' +
+    'Pol1 env = ' + envText(fp, 'pol1') + '<br>' +
+    'Pol1 f = ' + num(fp.pol1_f) + ',&nbsp; &phi; = ' + num(fp.pol1_phi) + '<br>' +
+    'Pol2 env = ' + envText(fp, 'pol2') + '<br>' +
+    'Pol2 f = ' + num(fp.pol2_f) + ',&nbsp; &phi; = ' + num(fp.pol2_phi) + '<br><br>' +
+    '<b>Periodicity = precision_sum &minus; freq_distance_sum</b><br>' +
+    '&nbsp;&nbsp;= ' + num(ps) + ' &minus; ' + num(fd) + ' = ' + num(c.meta.Periodicity);
+}
+function setupAcor(c){
+  var head = document.getElementById('acor-head');
+  if (!head) return;
+  var drawn = false;
+  head.addEventListener('click', function(){
+    var body = document.getElementById('acor-body');
+    var ind = document.getElementById('acor-ind');
+    if (body.style.display === 'none'){
+      body.style.display = 'block';
+      ind.innerHTML = '&#9660;';
+      if (!drawn){ drawAcor(c); drawn = true; }
+      else { Plotly.Plots.resize('acor-div'); }
+    } else {
+      body.style.display = 'none';
+      ind.innerHTML = '&#9658;';
+    }
+  });
+}
+
+// Left/Right step through the datapoints of the same GLOBAL cell, in film
+// order — the same navigation the M156 explorer has. Ignored while a form
+// control has focus, so typing a threshold does not jump the selection.
+function selectCell(c){ showCell(c); renderPlot(); }
+document.addEventListener('keydown', function(e){
+  var tag = document.activeElement ? document.activeElement.tagName : '';
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (!selected) return;
+  var group = CELLS.filter(function(q){ return q.gcid === selected.gcid; });
+  if (group.length <= 1) return;
+  group.sort(function(a, b){ return a.ord - b.ord; });
+  var i = group.findIndex(function(q){ return q.gid === selected.gid; });
+  if (i === -1) return;
+  e.preventDefault();
+  var j = (e.key === 'ArrowRight') ? (i + 1) % group.length
+                                   : (i - 1 + group.length) % group.length;
+  selectCell(group[j]);
+});
 
 document.getElementById('dim-select').addEventListener('change', function(){
   is3D = this.value === '3D'; renderPlot(); });
@@ -471,6 +708,9 @@ document.getElementById('color-select').addEventListener('change', function(){
 document.getElementById('cmin').addEventListener('change', renderPlot);
 document.getElementById('cmax').addEventListener('change', renderPlot);
 document.getElementById('link-chk').addEventListener('change', renderPlot);
+['thr-pol1','thr-pol2','thr-mono','thr-bi','thr-nc'].forEach(function(id){
+  document.getElementById(id).addEventListener('input', debounce(renderPlot, 250));
+});
 renderPlot();
 </script>
 </body>
