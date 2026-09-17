@@ -293,9 +293,9 @@ def main():
         f.write('<div id="thr-row">'
                 '<span>pol1&ge;</span><input type="number" id="thr-pol1" step="any" value="4.04">'
                 '<span>pol2&ge;</span><input type="number" id="thr-pol2" step="any" value="2.0">'
-                '<span>mono osc&gt;</span><input type="number" id="thr-mono" step="any" value="5.0">'
-                '<span>bi osc&gt;</span><input type="number" id="thr-bi" step="any" value="6.5">'
-                '<span>NC&le;</span><input type="number" id="thr-nc" step="any" value="0">'
+                '<span>mono osc&gt;</span><input type="number" id="thr-mono" step="any" value="1.14">'
+                '<span>bi osc&gt;</span><input type="number" id="thr-bi" step="any" value="1.60">'
+                '<span>NC&ge;</span><input type="number" id="thr-nc" step="any" value="0">'
                 '</div>\n')
         f.write(f'<div class="note"><b>Standalone</b> &mdash; autoencoder and UMAP both fit on '
                 f'M160 alone ({len(cells)} datapoints, {n_multi} cells spanning &ge;2 films).<br>'
@@ -361,10 +361,23 @@ def main():
 var is3D = true, selected = null;
 var MODE_AXIS = "Dynamic mode";
 
-// Dynamic-mode thresholds. Defaults are the M156 explorer's; NC is new — a
-// pole pair that oscillates in antiphase has a negative NC score, so requiring
-// NC <= thr stops a noisy but in-phase pair being called oscillatory.
-var THR = { pol1: 4.04, pol2: 2.0, mono: 5.0, bi: 6.5, nc: 0.0 };
+// Dynamic-mode thresholds.
+//
+// pol1 and pol2 keep the M156 values, which sit sensibly in M160's range: 16%
+// of datapoints clear pol1 >= 4.04 and 34% clear pol2 >= 2.0.
+//
+// The OSCILLATION thresholds do not transfer. M156 used Periodicity > 5.0 and
+// > 6.5, but M160's Periodicity runs -0.35 to 4.24 with a median of 0.46, so
+// those cut off literally nothing — 0.00% of datapoints clear either. They are
+// recalibrated here to this dataset's own distribution: 1.14 is the 90th
+// percentile and 1.60 roughly the 96th, preserving the M156 intent that
+// bipolar oscillation is the stricter call.
+//
+// NC score is POSITIVE when the two poles are negatively correlated, because
+// signal_cor computes it as -(A + C) over the cross-correlation fit. So an
+// oscillatory cell needs NC >= thr, not <=. 30% of datapoints are at or above
+// zero, which is the default.
+var THR = { pol1: 4.04, pol2: 2.0, mono: 1.14, bi: 1.60, nc: 0.0 };
 var MODE_LABELS = ["Non-polarized", "Monopolar", "Monopolar Osc", "Bipolar", "Bipolar Osc"];
 var MODE_COLORS = ["#94a3b8", "#f59e0b", "#ef4444", "#10b981", "#3b82f6"];
 var MODE_SCALE = [[0.0,'#94a3b8'],[0.2,'#94a3b8'],[0.2,'#f59e0b'],[0.4,'#f59e0b'],
@@ -373,7 +386,8 @@ var MODE_SCALE = [[0.0,'#94a3b8'],[0.2,'#94a3b8'],[0.2,'#f59e0b'],[0.4,'#f59e0b'
 
 function getCategory(p1, p2, per, nc){
   if (p1 === null || p1 === undefined || p1 < THR.pol1) return 0;   // Non-polarized
-  var osc = (nc !== null && nc !== undefined) ? (nc <= THR.nc) : true;
+  // NC is positive for anti-correlated poles, so oscillation needs NC >= thr
+  var osc = (nc !== null && nc !== undefined) ? (nc >= THR.nc) : true;
   if (p2 === null || p2 === undefined || p2 < THR.pol2)
     return (per > THR.mono && osc) ? 2 : 1;                          // Monopolar (Osc)
   return (per > THR.bi && osc) ? 4 : 3;                              // Bipolar (Osc)
@@ -386,7 +400,7 @@ function readThresholds(){
   var g = function(id, d){ var v = parseFloat(document.getElementById(id).value);
                            return isNaN(v) ? d : v; };
   THR.pol1 = g('thr-pol1', 4.04); THR.pol2 = g('thr-pol2', 2.0);
-  THR.mono = g('thr-mono', 5.0);  THR.bi   = g('thr-bi', 6.5);
+  THR.mono = g('thr-mono', 1.14); THR.bi   = g('thr-bi', 1.60);
   THR.nc   = g('thr-nc', 0.0);
 }
 function debounce(fn, ms){ var t; return function(){ clearTimeout(t); t = setTimeout(fn, ms); }; }
