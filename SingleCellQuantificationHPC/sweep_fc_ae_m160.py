@@ -77,7 +77,7 @@ ALPHA = 1.0
 SEED = 42
 
 
-def load(features_dir, keep_division):
+def load(features_dir, keep_division, film_contains=None):
     X_traj, X_feat, gids, labels, s_traj, s_feat = load_feature_constrained_data(
         {"M160": str(features_dir)})
     if not keep_division:
@@ -88,6 +88,15 @@ def load(features_dir, keep_division):
             keep = np.array([g not in drop for g in gids], bool)
             print(f"excluded division films: {int((~keep).sum())}", flush=True)
             X_traj, X_feat = X_traj[keep], X_feat[keep]
+            gids = [g for g, k in zip(gids, keep) if k]
+    # Restrict to one acquisition block. The elbow is a property of the dataset,
+    # not a constant: a smaller, more homogeneous set may support fewer
+    # dimensions before the model starts fitting noise.
+    if film_contains:
+        keep = np.array([film_contains in g for g in gids], bool)
+        print(f"film filter {film_contains!r}: {int(keep.sum())} of {len(gids)}",
+              flush=True)
+        X_traj, X_feat = X_traj[keep], X_feat[keep]
     return X_traj, X_feat
 
 
@@ -159,6 +168,7 @@ def main():
     ap.add_argument("--repeats", type=int, default=REPEATS)
     ap.add_argument("--epochs", type=int, default=EPOCHS)
     ap.add_argument("--keep-division-films", action="store_true")
+    ap.add_argument("--film-contains", default=None)
     a = ap.parse_args()
 
     random.seed(SEED)
@@ -166,7 +176,8 @@ def main():
     torch.manual_seed(SEED)
     a.out.mkdir(parents=True, exist_ok=True)
 
-    X_traj, X_feat = load(a.features_dir, a.keep_division_films)
+    X_traj, X_feat = load(a.features_dir, a.keep_division_films,
+                          a.film_contains)
     print(f"datapoints: {len(X_traj)}   trajectory {X_traj.shape}   "
           f"features {X_feat.shape}", flush=True)
     ds = TensorDataset(torch.tensor(X_traj, dtype=torch.float32),
@@ -240,6 +251,7 @@ def main():
         batch_size=BATCH_SIZE, lr=LR, weight_decay=WEIGHT_DECAY, alpha=ALPHA,
         seed=SEED, n_datapoints=int(len(X_traj)),
         division_films_excluded=bool(not a.keep_division_films),
+        film_filter=a.film_contains,
         elbow_total=k_tot, elbow_traj=k_traj,
         total_minutes=round((time.time() - t0) / 60, 1)), indent=2))
     print(f"\ntotal {(time.time() - t0)/60:.1f} min -> {a.out}")
