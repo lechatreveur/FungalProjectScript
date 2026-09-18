@@ -906,6 +906,27 @@ the EM or pole fitting.
 | `build_umap_html_m156_*.py` | Engineered-feature UMAP: standard-scale the eleven features, `umap.UMAP(n_components=2, random_state=42, n_jobs=1)`, then **re-embed into an existing explorer HTML**, lifting per-cell objects (trajectories, autocorrelation arrays, fit params, strips) out of it. Experiment-dated and frozen under P1; they cannot build an explorer from nothing. |
 | `SingleCellQuantificationHPC/build_umap_html_m160.py` | Self-contained **standalone** explorer for an experiment with no existing template: same UMAP settings, but constructs each cell object from the stage-4/5 artifacts (trajectories, features, strips) instead of lifting them. Writes the page incrementally so the embedded strips need not be held in memory, and states its standalone status in a banner on the page. |
 
+**The curated-family explorers have no generator in this repository.**
+`fc_ae_3d_manifold_explorer_curated_Sept17.html` and
+`fc_ae_3d_manifold_explorer_curated_M156_qcfiltered.html` — the template every
+`build_umap_html_m156_*.py` re-embeds into — are **not** written by any script
+here. Searching for those filenames, and for anything writing into `fc_ae_3d/`,
+finds nothing. They carry features no script in the repo produces: a 3D latent
+mode, link pairs, threshold controls, `getCategory` dynamic modes, a sticky
+card. `FC_AE_3d_umap.py` writes a different and much plainer page, titled
+"Fungal Manifold Explorer 2D/3D (3D AE)", and its output
+(`fc_ae_3d_manifold_explorer.html`, 2026-07-06) predates `fc_ae_3d_final.pth`
+(2026-07-20) by two weeks, so it does not even correspond to the checkpoint now
+on disk.
+
+Treat those HTMLs as **opaque artifacts**: they can be read and re-embedded
+into, never rebuilt. Two of the inputs they needed are also gone
+(`video_ae/video_gids.txt`, `video_ae/cycle_stage_scores.npy`), and
+`FC_AE_3d_umap.py` now crashes on its own data because the Sept17 stacked file
+gained a `global_cell_id` column, which changes the id format
+`load_cell_areas` assumes. Do not spend effort reproducing them; the M160
+pipeline is the maintained path.
+
 **Explorer format.** `FC_AE_3d_umap.py` is the house format and new explorers
 follow it: light theme (`#f4f6f8` page, white panels, `#1e293b` toolbar), a
 dimension toggle and a "Color by" dropdown, Viridis, and a card sidebar with the
