@@ -61,6 +61,14 @@ DEFAULT_STRIPS = _SSD / "strips"
 DEFAULT_OUT = _SSD / "umap_m160_standalone.html"
 SEQS = ["5_1_N1_F0", "5_1_N1_F1", "5_1_N1_F2"]
 
+# UMAP's n_neighbors is an ABSOLUTE count, but what governs the local-versus-
+# global balance is the fraction of the population it covers. The Sept17
+# reference used the library default of 15 on 378 cells — 3.97% — so matching
+# that fraction, rather than the number, is what makes two maps comparable.
+# On 861 FL1 datapoints it gives 34; on the full 6,243 it gives 248.
+REF_NEIGHBORS, REF_N = 15, 378
+NEIGHBORS_FRAC = REF_NEIGHBORS / REF_N
+
 COLOR_AXES = [
     ("Pol1 Mid Intensity", "pol1_mid"), ("Pol2 Mid Intensity", "pol2_mid"),
     ("Pol1 Variability", "pol1_v"), ("Pol2 Variability", "pol2_v"),
@@ -188,6 +196,9 @@ def main():
                     default=Path("/Volumes/X10 Pro/Movies") / EXP_NAME)
     ap.add_argument("--strips", type=Path, default=DEFAULT_STRIPS)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--n-neighbors", type=int, default=None,
+                    help="UMAP n_neighbors; default scales with the dataset to "
+                         "hold the Sept17 reference fraction of 15/378")
     ap.add_argument("--film-contains", default=None,
                     help="restrict the map to films matching this string")
     ap.add_argument("--no-strips", action="store_true")
@@ -222,9 +233,14 @@ def main():
         _, _, lat = model(torch.from_numpy(X_traj).float(),
                           torch.from_numpy(X_feat).float())
     lat = lat.numpy()
-    print(f"latents: {lat.shape}; fitting UMAP on them (standalone) ...", flush=True)
-    e3 = umap.UMAP(n_components=3, random_state=42, n_jobs=1).fit_transform(lat)
-    e2 = umap.UMAP(n_components=2, random_state=42, n_jobs=1).fit_transform(lat)
+    n_nb = a.n_neighbors or max(2, min(len(lat) - 1, round(NEIGHBORS_FRAC * len(lat))))
+    print(f"latents: {lat.shape}; n_neighbors {n_nb} "
+          f"({100*n_nb/len(lat):.2f}% of {len(lat)}, matching Sept17's "
+          f"{100*NEIGHBORS_FRAC:.2f}%); fitting UMAP ...", flush=True)
+    e3 = umap.UMAP(n_components=3, n_neighbors=n_nb,
+                   random_state=42, n_jobs=1).fit_transform(lat)
+    e2 = umap.UMAP(n_components=2, n_neighbors=n_nb,
+                   random_state=42, n_jobs=1).fit_transform(lat)
 
     feats = pd.read_csv(a.features_dir / "umap_features_m160.csv")
     # Cell-cycle stage, from cell_cycle_regress_m160.py. `stage_source` marks
@@ -792,6 +808,8 @@ renderPlot();
                 created_by="SingleCellQuantificationHPC/build_umap_html_m160.py",
                 experiment=EXP_NAME, standalone=True,
                 umap_fit_on="autoencoder latents (fc_ae_3d_m160.pth)",
+                n_neighbors=int(n_nb),
+                n_neighbors_fraction=round(n_nb / len(lat), 5),
                 latent_dim=int(lat_dim),
                 model=str(a.model), n_datapoints=len(cells),
                 n_global_cells_multi_film=int(n_multi),
