@@ -102,6 +102,11 @@ def main():
     ap.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     ap.add_argument("--mps", action="store_true", help="use MPS instead of CPU")
     ap.add_argument("--latent-dim", type=int, default=LATENT_DIM)
+    ap.add_argument("--no-seed", action="store_true",
+                    help="leave the RNG unseeded, as FC_AE_3d_train.py does. "
+                         "The run is then NOT reproducible: on this data the "
+                         "same code gives an 8.5%% spread in loss and a "
+                         "different latent space each time.")
     ap.add_argument("--film-contains", default=None,
                     help="train only on datapoints whose film matches, "
                          "e.g. FL1_ for the least laser-exposed block")
@@ -109,9 +114,13 @@ def main():
                     help="train on the dividing films too (default: exclude them)")
     a = ap.parse_args()
 
-    random.seed(SEED)
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
+    if a.no_seed:
+        print("UNSEEDED: this run cannot be reproduced (matches FC_AE_3d_train.py)",
+              flush=True)
+    else:
+        random.seed(SEED)
+        np.random.seed(SEED)
+        torch.manual_seed(SEED)
 
     print("loading M160 trajectories and features ...", flush=True)
     X_traj, X_feat, gids, labels, s_traj, s_feat = load_feature_constrained_data(
@@ -206,7 +215,9 @@ def main():
         division_films_excluded=bool(not a.keep_division_films),
         features_dir=str(a.features_dir), n_datapoints=int(len(gids)),
         epochs=a.epochs, batch_size=a.batch_size, lr=LEARNING_RATE,
-        weight_decay=WEIGHT_DECAY, alpha=ALPHA, seed=SEED, device=str(device),
+        weight_decay=WEIGHT_DECAY, alpha=ALPHA,
+        seed=(None if a.no_seed else SEED),
+        reproducible=bool(not a.no_seed), device=str(device),
         final=history[-1] if history else None)
     (a.model.parent / (a.model.stem + "_provenance.json")).write_text(json.dumps(prov, indent=2))
 
