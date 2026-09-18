@@ -102,6 +102,9 @@ def main():
     ap.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     ap.add_argument("--mps", action="store_true", help="use MPS instead of CPU")
     ap.add_argument("--latent-dim", type=int, default=LATENT_DIM)
+    ap.add_argument("--film-contains", default=None,
+                    help="train only on datapoints whose film matches, "
+                         "e.g. FL1_ for the least laser-exposed block")
     ap.add_argument("--keep-division-films", action="store_true",
                     help="train on the dividing films too (default: exclude them)")
     a = ap.parse_args()
@@ -136,6 +139,19 @@ def main():
                   flush=True)
         else:
             print("  (no is_division_film column; nothing excluded)", flush=True)
+    # Restrict to one acquisition block. The fluorescence films are imaged in
+    # sequence, so FL7 has taken roughly seven times the cumulative laser dose of
+    # FL1. Training on FL1 alone gives a control in which exposure is as near
+    # uniform as this experiment allows, to test whether structure in the full
+    # manifold is biology or phototoxicity.
+    if a.film_contains:
+        keep = np.array([a.film_contains in g for g in gids], bool)
+        print(f"film filter {a.film_contains!r}: {int(keep.sum())} of {len(gids)} "
+              f"datapoints", flush=True)
+        X_traj, X_feat = X_traj[keep], X_feat[keep]
+        gids = [g for g, k in zip(gids, keep) if k]
+        labels = [l for l, k in zip(labels, keep) if k]
+
     if len(gids) == 0:
         raise SystemExit("no datapoints survived the loader; check trace lengths are 101")
 
@@ -186,6 +202,7 @@ def main():
         model=(f"MultimodalAutoencoder3D(seq_len=101, in_channels=2, "
                f"num_features=11, latent_dim={a.latent_dim})"),
         latent_dim=int(a.latent_dim),
+        film_filter=a.film_contains,
         division_films_excluded=bool(not a.keep_division_films),
         features_dir=str(a.features_dir), n_datapoints=int(len(gids)),
         epochs=a.epochs, batch_size=a.batch_size, lr=LEARNING_RATE,

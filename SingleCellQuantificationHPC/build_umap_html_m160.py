@@ -188,6 +188,8 @@ def main():
                     default=Path("/Volumes/X10 Pro/Movies") / EXP_NAME)
     ap.add_argument("--strips", type=Path, default=DEFAULT_STRIPS)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--film-contains", default=None,
+                    help="restrict the map to films matching this string")
     ap.add_argument("--no-strips", action="store_true")
     ap.add_argument("--strips-mode", choices=("auto", "embed", "link"), default="auto",
                     help="embed inlines each PNG (self-contained but large); "
@@ -198,6 +200,11 @@ def main():
 
     X_traj, X_feat, gids, labels, s_traj, s_feat = load_feature_constrained_data(
         {"M160": str(a.features_dir)})
+    if a.film_contains:
+        keep = np.array([a.film_contains in g for g in gids], bool)
+        X_traj, X_feat = X_traj[keep], X_feat[keep]
+        gids = [g for g, k in zip(gids, keep) if k]
+        print(f"film filter {a.film_contains!r}: {len(gids)} datapoints", flush=True)
     print(f"datapoints: {len(gids)}", flush=True)
 
     # Read the latent dimension out of the checkpoint itself rather than
