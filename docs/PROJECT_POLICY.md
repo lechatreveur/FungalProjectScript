@@ -906,26 +906,48 @@ the EM or pole fitting.
 | `build_umap_html_m156_*.py` | Engineered-feature UMAP: standard-scale the eleven features, `umap.UMAP(n_components=2, random_state=42, n_jobs=1)`, then **re-embed into an existing explorer HTML**, lifting per-cell objects (trajectories, autocorrelation arrays, fit params, strips) out of it. Experiment-dated and frozen under P1; they cannot build an explorer from nothing. |
 | `SingleCellQuantificationHPC/build_umap_html_m160.py` | Self-contained **standalone** explorer for an experiment with no existing template: same UMAP settings, but constructs each cell object from the stage-4/5 artifacts (trajectories, features, strips) instead of lifting them. Writes the page incrementally so the embedded strips need not be held in memory, and states its standalone status in a banner on the page. |
 
-**The curated-family explorers have no generator in this repository.**
-`fc_ae_3d_manifold_explorer_curated_Sept17.html` and
-`fc_ae_3d_manifold_explorer_curated_M156_qcfiltered.html` — the template every
-`build_umap_html_m156_*.py` re-embeds into — are **not** written by any script
-here. Searching for those filenames, and for anything writing into `fc_ae_3d/`,
-finds nothing. They carry features no script in the repo produces: a 3D latent
-mode, link pairs, threshold controls, `getCategory` dynamic modes, a sticky
-card. `FC_AE_3d_umap.py` writes a different and much plainer page, titled
-"Fungal Manifold Explorer 2D/3D (3D AE)", and its output
-(`fc_ae_3d_manifold_explorer.html`, 2026-07-06) predates `fc_ae_3d_final.pth`
-(2026-07-20) by two weeks, so it does not even correspond to the checkpoint now
-on disk.
+**The curated-family explorers are built by
+`SingleCellDataAnalysis/manifold_explorer/`.** That package — `cli.py`,
+`pipeline.py`, `exporter.py`, `adapters.py`, `division_time.py`, `qc.py`,
+`schemas.py`, `config.py` and `templates/` — is the generator for
+`fc_ae_3d_manifold_explorer_curated_Sept17.html`,
+`..._curated_M156_qcfiltered.html` and the rest of that family. It is driven by
+a YAML config, so the output filename appears in `config.yaml` and `README.md`,
+never in the Python source:
 
-Treat those HTMLs as **opaque artifacts**: they can be read and re-embedded
-into, never rebuilt. Two of the inputs they needed are also gone
-(`video_ae/video_gids.txt`, `video_ae/cycle_stage_scores.npy`), and
-`FC_AE_3d_umap.py` now crashes on its own data because the Sept17 stacked file
-gained a `global_cell_id` column, which changes the id format
-`load_cell_areas` assumes. Do not spend effort reproducing them; the M160
-pipeline is the maintained path.
+    python -m SingleCellDataAnalysis.manifold_explorer.cli build config.yaml
+
+The live config is `SingleCellDataAnalysis/config.yaml`.
+
+**This is the reference implementation and new manifold work should extend it
+rather than parallel it.** In particular it already provides four things worth
+knowing before building anything similar:
+
+- **A declared film clock.** Each source carries `start_time_min`,
+  `midpoint_min` and `time_res_min`, so the acquisition timing is configuration
+  rather than something to re-derive from image metadata. It also declares
+  `cycle_length_min`.
+- **Reference fitting, done as P1 requires.** The scaler is fitted on the
+  reference experiment's curated cells only, then UMAP is `fit` on reference
+  latents and every other experiment is placed with `.transform()`. A build that
+  calls `fit_transform` per experiment produces standalone maps that are not
+  comparable; this one does not.
+- **Division time with brightfield area alignment.**
+  `division_time.py::estimate_missing_division_times` fits area against time on
+  cells that have a division time and places the rest by
+  `tau = mean_T - (mean_A - c) / m`, using brightfield areas decoded from the
+  masks.
+- **Composable QC.** `qc.py` excludes cells with missing trajectories or a
+  `bad` curation status and reports the reasons, which is where the "curated"
+  and "qcfiltered" in those filenames come from.
+
+`FC_AE_3d_umap.py` is a different and much plainer builder. Its output
+(`fc_ae_3d_manifold_explorer.html`, 2026-07-06) predates `fc_ae_3d_final.pth`
+(2026-07-20), so it does not correspond to the checkpoint on disk, and it now
+crashes on Sept17 data because the stacked file gained a `global_cell_id` column
+that changes the id format `load_cell_areas` assumes. Two of its inputs,
+`video_ae/video_gids.txt` and `video_ae/cycle_stage_scores.npy`, are also gone.
+Prefer `manifold_explorer`.
 
 **Explorer format.** `FC_AE_3d_umap.py` is the house format and new explorers
 follow it: light theme (`#f4f6f8` page, white panels, `#1e293b` toolbar), a
