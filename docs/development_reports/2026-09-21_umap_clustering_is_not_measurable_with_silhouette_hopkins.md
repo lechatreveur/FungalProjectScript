@@ -56,6 +56,54 @@ Four datasets, n=6243 in 6D, identical pipeline:
 | **M160 real** | **+0.458** | **+0.481** | 0.87-0.89 |
 | 3 genuinely separated Gaussian blobs | +0.886 | +0.926 | 0.99 |
 
+### 5. The same two tests on FL1 only (`m160_FL1_n_neighbors_sweep.png`, `m160_FL1_null_calibration.png`)
+
+FL1 is the laser-stress control: first fluorescent film per position, least
+exposed, its own autoencoder. n=861, **3D** latent (the unseeded 3D model).
+About 1/7 the full cohort, so this is where a sparse neighbour graph can bite.
+
+| n_neighbors | % of n | best k | silhouette |
+| ---: | ---: | ---: | ---: |
+| 5 | 0.58% | 8 | +0.466 |
+| 15 (library default) | 1.74% | 8 | +0.470 |
+| 30 | 3.48% | 2 | +0.456 |
+| 34 (fraction-matched) | 3.97% | 8 | +0.452 |
+| 60 | 6.97% | 2 | +0.455 |
+| 125 | 14.52% | 2 | +0.466 |
+| 250 | 29.04% | 2 | +0.471 |
+| 500 | 58.07% | 2 | +0.478 |
+| 800 | 92.92% | 2 | +0.476 |
+
+**At n=861 the map does fragment, and silhouette does not notice.** At
+`n_neighbors` 5 and 15 FL1 breaks into stringy filaments and detached islands -
+visually a dozen clusters, best k jumps to 8. By 30 it is a single blob. This
+is the fragmentation predicted for, and not observed in, the full cohort: at
+n=6243 even 5 neighbours connects a dense graph. But silhouette reads +0.466
+fragmented and +0.476 smooth. The metric is blind to a total change in the map.
+
+Nulls regenerated at FL1's own n and latent dimension:
+
+| dataset | sil @15 | sil @34 |
+| --- | ---: | ---: |
+| isotropic Gaussian | +0.440 | +0.433 |
+| FL1 shuffled dims | +0.469 | +0.480 |
+| **FL1 real** | **+0.470** | **+0.452** |
+| 3 true blobs | +0.852 | +0.869 |
+
+**FL1 does not clear its own floor.** It ties the shuffled null at 15 and
+*loses to it* at 34. Destroying every joint relationship while keeping the
+marginals produces a map that scores as well or better.
+
+Note the floor moved: +0.43-0.44 at n=861 vs +0.38 at n=6243. Noise floors are
+sample-size dependent, so a silhouette from one cohort can never be compared
+against another's without re-deriving both. FL1's 3D latent vs the full
+cohort's 6D is a second reason not to compare their scores directly; each is
+valid only against its own matched nulls.
+
+Consequence for the laser-stress question: the least-exposed population has no
+more latent structure than shuffled noise. Laser damage is not concealing a
+cluster structure that FL1 would have revealed.
+
 ## Findings
 
 **The silhouette floor on a UMAP embedding is ~+0.39, not 0.** K-means bisects
@@ -68,10 +116,21 @@ assumes a uniform-box null; a UMAP output is never uniform, so structureless
 noise scores 0.78-0.80. The shuffled null scored *higher* (0.917) than the real
 data (0.867). Discard all Hopkins figures previously quoted in this thread.
 
-**Neither dataset clusters.** Sept17's +0.514, M160's +0.481 and the matched-n
-subsamples' +0.502 all sit in the noise band. There was no Sept17 clustering
-result for M160 to fail to reproduce. The remembered "obvious clustering" in
-the Sept17 explorer is not supported by these measurements.
+**Neither dataset clusters, and neither does FL1.** Sept17's +0.514, M160's
++0.481 and the matched-n subsamples' +0.502 all sit in the noise band. FL1
+fails harder: it loses to its own shuffled null at the fraction-matched
+setting. There was no Sept17 clustering result for M160 to fail to reproduce.
+The remembered "obvious clustering" in the Sept17 explorer is not supported by
+these measurements.
+
+**The picture and the metric are independent failure modes.** FL1 at
+`n_neighbors=15` fragments into apparent islands while silhouette stays flat;
+the full cohort keeps one shape while silhouette drifts. Neither instrument
+constrains the other, so passing one proves nothing about the other.
+
+**Noise floors are sample-size and dimension dependent.** +0.38 at n=6243/6D,
++0.43 at n=861/3D. Scores from different cohorts are never directly
+comparable; each needs its own nulls re-derived.
 
 **UMAP manufactures convincing structure from nothing.** The shuffled-dimension
 null - all joint structure destroyed, every marginal preserved - renders as a

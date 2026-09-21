@@ -1022,14 +1022,19 @@ silhouette or Hopkins score computed on one. Both were calibrated against
 structureless nulls on 2026-09-21 and found to be non-discriminating in the
 range this project works in.
 
-Measured on M160 (n=6243, 6D latents), identical pipeline throughout:
+Measured on M160 (n=6243, 6D latents) and on FL1 only (n=861, 3D latents),
+identical pipeline throughout, each at its own fraction-matched `n_neighbors`:
 
-| dataset | silhouette @ n_nb=248 |
-| --- | ---: |
-| isotropic Gaussian, no structure | +0.379 |
-| M160 with each latent dim independently permuted | +0.435 |
-| M160 real | +0.481 |
-| 3 genuinely separated Gaussian blobs | +0.926 |
+| dataset | M160 @248 | FL1 @34 |
+| --- | ---: | ---: |
+| isotropic Gaussian, no structure | +0.379 | +0.433 |
+| each latent dim independently permuted | +0.435 | **+0.480** |
+| real data | +0.481 | **+0.452** |
+| 3 genuinely separated Gaussian blobs | +0.926 | +0.869 |
+
+**The noise floor is sample-size and dimension dependent** — +0.38 at n=6243/6D
+but +0.43 at n=861/3D. A silhouette from one cohort is never comparable to
+another's without re-deriving both floors. FL1 loses to its own shuffled null.
 
 **The silhouette floor is ~+0.39, not 0.** K-means bisects any elongated cloud
 and silhouette rewards it, so `best k = 2` with a score near +0.45 is the
@@ -1049,10 +1054,16 @@ Therefore:
 2. Never read cluster structure off a UMAP scatter by eye. The shuffled null
    renders as a vivid multi-armed star that looks more structured than the real
    cohort — see `metric_null_calibration.png`, panel 2.
-3. Prefer a conditioned question to an unconditioned one. "Do the Mode
+3. **The picture and the metric fail independently.** At n=861, FL1 at
+   `n_neighbors` 5-15 fragments into apparent islands (best k jumps to 8) while
+   silhouette stays flat at +0.47; at n=6243 the shape is invariant while the
+   score drifts. Passing one check proves nothing about the other. Below
+   roughly n=1000, expect small `n_neighbors` to manufacture visible islands
+   from nothing — report the setting alongside any such figure.
+4. Prefer a conditioned question to an unconditioned one. "Do the Mode
    categories separate in latent space?" is testable; "are there clusters?"
    is not, at the effect sizes seen here.
-4. Re-run `SingleCellDataAnalysis/umap_validation/null_calibration.py` before
+5. Re-run `SingleCellDataAnalysis/umap_validation/null_calibration.py` before
    publishing any structural claim about a new embedding.
 
 Full workings: `docs/development_reports/2026-09-21_umap_clustering_is_not_measurable_with_silhouette_hopkins.md`
