@@ -1014,3 +1014,45 @@ in the same commit that introduces the module, and say in the commit message
 which entry moved and why.
 
 
+
+## P16 — Cluster claims about a UMAP embedding require matched nulls
+
+A UMAP scatter plot is not evidence of cluster structure, and neither is a bare
+silhouette or Hopkins score computed on one. Both were calibrated against
+structureless nulls on 2026-09-21 and found to be non-discriminating in the
+range this project works in.
+
+Measured on M160 (n=6243, 6D latents), identical pipeline throughout:
+
+| dataset | silhouette @ n_nb=248 |
+| --- | ---: |
+| isotropic Gaussian, no structure | +0.379 |
+| M160 with each latent dim independently permuted | +0.435 |
+| M160 real | +0.481 |
+| 3 genuinely separated Gaussian blobs | +0.926 |
+
+**The silhouette floor is ~+0.39, not 0.** K-means bisects any elongated cloud
+and silhouette rewards it, so `best k = 2` with a score near +0.45 is the
+signature of a single continuous mass, not of two clusters.
+
+**Hopkins must not be used on a UMAP embedding at all.** Its 0.5-means-uniform
+baseline assumes a uniform-box null; a UMAP output is never uniform, so noise
+scores 0.78-0.80. In the calibration the shuffled null scored *higher* (0.917)
+than the real data (0.867).
+
+Therefore:
+
+1. Any claim that an embedding does or does not contain clusters must report,
+   in the same table, the score for the same data with each latent dimension
+   independently permuted. That null preserves all marginals and destroys all
+   joint structure, so it is the correct floor for this question.
+2. Never read cluster structure off a UMAP scatter by eye. The shuffled null
+   renders as a vivid multi-armed star that looks more structured than the real
+   cohort — see `metric_null_calibration.png`, panel 2.
+3. Prefer a conditioned question to an unconditioned one. "Do the Mode
+   categories separate in latent space?" is testable; "are there clusters?"
+   is not, at the effect sizes seen here.
+4. Re-run `SingleCellDataAnalysis/umap_validation/null_calibration.py` before
+   publishing any structural claim about a new embedding.
+
+Full workings: `docs/development_reports/2026-09-21_umap_clustering_is_not_measurable_with_silhouette_hopkins.md`

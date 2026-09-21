@@ -1,0 +1,50 @@
+# Sept17 as the UMAP pipeline control.
+#
+# Sept17 alone, as the reference experiment, to establish that the reference
+# path runs and produces a sane map before any other experiment is projected
+# onto it. Nothing else is listed, so the scaler and the UMAP fit are both
+# Sept17's own — which is what a control needs.
+#
+#   python3 -m SingleCellDataAnalysis.manifold_explorer.cli \
+#       build SingleCellDataAnalysis/config_sept17_control.yaml
+#
+# Deliberately NOT written to fc_ae_3d/, and NOT named like the existing
+# curated explorers: this is a control run and must not overwrite the artifact
+# it is being checked against.
+#
+# Sept17's data is field F1 only — the stacked CSV has no F0 rows and
+# F0/qc_F0.json does not exist — so only F1's QC file is listed, unlike the
+# README example which shows both.
+
+output:
+  directory: "/Volumes/X10 Pro/FungalProject_Outputs/umap_control"
+  mode: "single-html"
+  filename: "Sept17_control_20260921.html"
+
+model:
+  path: "/Volumes/X10 Pro/FungalProject_Outputs/fc_ae_3d/fc_ae_3d_final.pth"
+  reference_experiment: "Sept17"
+  umap_seed: 42
+
+experiments:
+  Sept17:
+    root: "/Volumes/X10 Pro/Movies/2025_09_17"
+    stacked_csv: "/Volumes/X10 Pro/Movies/2025_09_17/unaligned_pairs_quant/stacked_gfp1_gfp2_for_unaligned_pairs.csv"
+    id_map_csv: "/Volumes/X10 Pro/Movies/2025_09_17/unaligned_pairs_quant/id_map_unaligned.csv"
+    linkage_json: "/Volumes/X10 Pro/Movies/2025_09_17/sequence_linkage.json"
+    qc_jsons:
+      - "/Volumes/X10 Pro/Movies/2025_09_17/F1/qc_F1.json"
+    cycle_length_min: 300.0
+    reference: true
+    adapter_type: "sept17"
+    sources:
+      GFP1:
+        film_name: "A14_1TP1_{field}"
+        midpoint_min: 10.0
+        time_res_min: 0.2
+        start_time_min: 0.0
+      GFP2:
+        film_name: "A14_1TP2_{field}"
+        midpoint_min: 150.0
+        time_res_min: 0.2
+        start_time_min: 140.0
