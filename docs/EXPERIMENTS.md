@@ -41,6 +41,7 @@ registry: `SingleCellQuantificationHPC/tracking_corrector/config.yaml`.
 | M143 | 2026-06-03 | `2026_06_03_M143` | `Scd1S573A` / `Scd1S573D` (phospho-site mutants) | gfp (per `run_local_M143_gfp.sh`) | 6-film per strain, `{strain}_{F} … _5_{F}` | `submit_array_M143.sh`, `submit_single_M143.sh`, `run_local_M143_gfp.sh` | |
 | M156 | 2026-07-16 | `2026_07_16_M156` | field `3_`, `FL1`–`FL6` (6 GFP films) | bf+gfp | 6-film `3_FL1..FL6_{F}` | **major current subject**: retrack (`retrack_F2_improved.py`, `submit_array_M156_fl_retrack.sh`), curated dataset, vertical strips (`generate_M156_strips.py`), `merge_cell_data_M156.py`, `FC_AE_3d_train_M156.py`, many `umap_m156_*.html` / `build_umap_*` deliverables; current manifold-explorer reference in `SingleCellDataAnalysis/config.yaml` | |
 | M160 | 2026-08-28 | `2026_08_28_M160` | `5_1_N1`, `FL1`–`FL7` + `BF1`–`BF6` | bf+gfp | 13-film `5_1_N1_{F}` (excl. `N1_2`, `snap`) | `retrack_m160_sequences.py`, `retrack_3frames_m160.py`, `submit_array_M160.sh`; ABBT [report 2026-09-08](development_reports/development_report_2026_09_08.md); dense tracking [report 2026-09-11](development_reports/development_report_2026_09_11.md); model-based dense tracking [report 2026-09-11](development_reports/development_report_2026_09_11_model_based_dense_tracking.md); stages 5-6 complete (features, lineage, division, cell cycle, 6D AE, explorer); **manifold is continuous, no discrete modes** - see [experiment report 2026-09-21](development_reports/2026-09-21_M160_continuous_distribution_experiment_report.md) | |
+| M161 | 2026-09-03 | `2026_09_03_M161` (**NAS only**: `/Volumes/Movies/2026_09_03_M161`) | `NeonG_YES_1`, `FL1`–`FL6` + `BF1`–`BF5` | bf+gfp | 11-film `NeonG_YES_1_{film}_{F}` (4 fields `F0`–`F3`) | **raw only — no segmentation, tracking or quantification**; 7.8 GB, 60 `.ims`. Same condition and acquisition settings as M162 (101×12 s, 350/120 ms, laser 2 @ 5), different session — so it is the **replicate control** for the M160 comparison, see [experiment report 2026-09-21](development_reports/2026-09-21_M160_continuous_distribution_experiment_report.md) | |
 | M162 | 2026-09-09 | `2026_09_09_M162` | `NeonG_YES`, `FL1`–`FL4` + `BF1`–`BF3` | bf+gfp | 7-film `NeonG_YES_{film}_{F}` (4 fields `F0`–`F3`) | newest; `segment_m162_keyframes.py`, `track_and_link_m162.py`, `apply_abbt_m162.py`; **stage 3 complete** (4 FL x 4 fields + 3 BF x 4 fields), stages 4-6 pending; illumination-matched control for M160 (same laser line, intensity 5, 101x12s; exposure 350/120 vs 400/100 ms) | |
 
 ## Status legend for the "Aim" work
@@ -52,7 +53,8 @@ registry: `SingleCellQuantificationHPC/tracking_corrector/config.yaml`.
   been through representation-learning.
 - Keep this table updated when a new experiment folder is added to
   `tracking_corrector/config.yaml`.
-- **There is no M161.** Searched the SSD, the home tree and this ledger on
-  2026-09-21: the series goes M160 (2026-08-28) straight to M162 (2026-09-09).
-  If an M161 was acquired it lives on the NAS or a machine not mounted locally.
-  Do not assume it exists when planning comparisons.
+- **The NAS holds experiments this ledger does not.** As of 2026-09-21
+  `/Volumes/Movies` also contains M157, M158, M159, M163, M164, M165, M166 and
+  M167, none of them recorded here. Some may be better-matched controls than
+  M162. Search the NAS mount, not just the SSD, before concluding an experiment
+  does not exist.

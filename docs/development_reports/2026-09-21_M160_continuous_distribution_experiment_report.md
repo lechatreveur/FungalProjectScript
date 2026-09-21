@@ -128,118 +128,134 @@ composition or exhaustion, agar pad preparation and drying, culture age or
 density at mounting, time between mounting and first acquisition, focus drift
 and the BF interleave, strain background.
 
-## 5. Next step: compare M160 FL1 against M161 and M162 FL1
+## 5. Next step: compare M160, M161 and M162 FL1
 
-### 5.1 M161 does not exist
+### 5.1 M161 is on the NAS
 
-Searched the SSD, the home tree, and `docs/EXPERIMENTS.md`. **There is no M161
-anywhere accessible.** The ledger goes M160 (2026-08-28) -> M162 (2026-09-09).
-If M161 was acquired it is on the NAS or a machine not mounted here; if it was
-never acquired, the comparison is M160 vs M162 only. **This needs your
-confirmation before planning around it.**
+`/Volumes/Movies/2026_09_03_M161`, acquired 2026-09-03, condition
+`NeonG_YES_1`. 7.8 GB, 60 `.ims` files, FL1-FL6 + BF1-BF5 across 4 fields
+(F0-F3). **No processing exists anywhere** - it has not been imported to the
+SSD and has no segmentation, tracking or quantification.
 
-### 5.2 M162 is an excellent illumination-matched control
+(An earlier draft of this report stated M161 did not exist. That search covered
+the SSD and the home tree but not the NAS mount at `/Volumes/Movies`. The NAS
+also holds M157, M158, M159, M163, M164, M165, M166 and M167, none of which are
+in `docs/EXPERIMENTS.md`.)
 
-From the acquisition metadata:
+### 5.2 M161 and M162 are the same condition, which makes this a real design
 
-| | M160 FL | M162 FL1 |
-| --- | --- | --- |
-| date | 2026-08-28 14:44 | 2026-09-09 10:21 |
-| frames x interval | 101 x 12 s | 101 x 12 s |
-| duration | 20.0 min | 20.2 min |
-| exposure ch1 / ch2 | 400 / 100 ms | 350 / 120 ms |
-| laser line | Laser 2 on | Laser 2 on |
-| **laser intensity** | **5** | **5** |
-| binning | 1x1 | 1x1 |
+| | M160 | M161 | M162 |
+| --- | --- | --- | --- |
+| date | 2026-08-28 | 2026-09-03 | 2026-09-09 |
+| condition | `5_1_N1` | `NeonG_YES_1` | `NeonG_YES` |
+| FL films | FL1-FL7 | FL1-FL6 | FL1-FL4 |
+| BF films | BF1-BF6 | BF1-BF5 | BF1-BF3 |
+| fields | F0-F2 (3) | F0-F3 (4) | F0-F3 (4) |
+| FL cadence | 101 x 12 s | 101 x 12 s | 101 x 12 s |
+| exposure ch1/ch2 | 400 / 100 ms | **350 / 120 ms** | **350 / 120 ms** |
+| laser line | Laser 2 on | Laser 2 on | Laser 2 on |
+| laser intensity | **5** | **5** | **5** |
+| binning | 1x1 | 1x1 | 1x1 |
 
-Same line, same intensity, same cadence, exposure within 15%. **If M162 FL1
-shows discrete modes under this pipeline, illumination dose is definitively
-excluded and the cause lies in strain, medium, or handling.** If M162 FL1 is
-also continuous, then either the condition is shared or the discrete-mode model
-itself needs revisiting.
+M161 and M162 share strain, medium **and** acquisition settings exactly, and
+differ only in session and day. M160 differs in strain/medium and marginally in
+exposure, at the same laser intensity.
 
-**Important limitation:** M162 differs from M160 in strain *and* medium
-(`NeonG_YES` vs `5_1_N1`) and in date. It is therefore a "does any other
-dataset show discrete modes" test, **not** a controlled single-factor
-experiment. A positive result narrows the field; it does not identify the
-factor. Isolating one factor requires a purpose-designed acquisition (6.3).
+So M161 is not a redundant third dataset - it is the **replicate control** that
+the M160-vs-M162 comparison was missing. The three outcomes are now separable:
 
-### 5.3 M162 pipeline state
+| outcome | reading |
+| --- | --- |
+| M161 ~ M162, both differ from M160 | strain/medium (or the minor exposure difference) |
+| **M161 differs from M162** | **session-level: handling, temperature, mounting, culture age** |
+| all three continuous | the stressor is common to the whole setup, or the discrete-mode model itself needs revisiting |
 
-Stage 3 (model-based dense tracking) is **complete**: 4 FL films x 4 fields +
-3 BF films x 4 fields, with per-film provenance JSONs and `dense_masks`.
+The middle row is the one that directly tests section 4's hypothesis, and it is
+only testable because two sessions share a condition. Without M161 a difference
+between M160 and M162 could never have been attributed to anything.
 
-FL1 tracked rows: F0 198, F1 514, F2 238, F3 296 = **1,246**, comfortably above
-M160 FL1's n=861, so the comparison will not be sample-size limited.
+Note that a M161-vs-M162 difference is the *informative* result here even
+though it is the noisier-looking one: it would localise the stressor to
+something that varies between sessions, which is exactly the class of factor
+listed in section 4.
 
-**Missing:** stage 4 quantification, stage 4b strips, stage 5 features, stage 6
-autoencoder. No `features/` directory, no `.pth`.
+### 5.3 Pipeline state
+
+| | M160 | M161 | M162 |
+| --- | --- | --- | --- |
+| stage 1 keyframes | done | **none** | `m162_abbt_results.csv` exists, curation status unconfirmed |
+| stage 2 segmentation | done | **none** | done |
+| stage 3 dense tracking | done | **none** | **done** (4 FL x 4 fields + 3 BF x 4 fields) |
+| stage 4 quantification | done | none | none |
+| stage 5 features | done | none | none |
+| stage 6 autoencoder | done | none | none |
+| on SSD? | yes | **no, NAS only** | yes |
+
+FL1 cohort sizes: M160 861 datapoints; M162 1,246 tracked rows (F0 198, F1 514,
+F2 238, F3 296); M161 unknown until tracked, but 4 fields at M162's density
+suggests a comparable figure. None of the three will be sample-size limited.
+
+**M161 is the long pole.** It needs stages 1-5 from raw, where M162 needs only
+4-5. Budget accordingly.
 
 ## 6. What to prepare
 
-### 6.1 Blocking questions (need your answer)
+### 6.1 Questions (no longer blocking, but they shape the plan)
 
-1. **Does M161 exist?** If yes, where - NAS path or HPC path? If no, confirm
-   the comparison is M160 vs M162.
-2. **M162 keyframe curation status.** `m162_abbt_results.csv` exists, but P14
-   stage 1 requires curated keyframes before quantification is trustworthy.
-   Has M162 been through curation, or does it need a review pass?
-3. **Which factor do you most suspect?** It determines what metadata is worth
-   extracting alongside (stage temperature, mount-to-acquisition delay, culture
-   OD) and whether a purpose-designed M163 is warranted.
+1. **M162 keyframe curation status.** `m162_abbt_results.csv` exists, but P14
+   stage 1 wants curated keyframes before quantification is trustworthy. Has
+   M162 had a review pass, or does it need one?
+2. **Which factor do you most suspect?** Determines what session metadata is
+   worth capturing alongside - stage temperature, mount-to-acquisition delay,
+   culture OD at mounting - and whether a purpose-designed M168 is warranted.
+3. **Should the other NAS experiments be catalogued?** M157-M159 and M163-M167
+   are unrecorded. Some may be better-matched controls than M162.
 
-### 6.2 Work that can start immediately on M162
+### 6.2 Recommended order of work
 
-In P14 stage order, reusing the M160 modules with an M162 id map:
+**Run the cheap decisive analysis first.** Section 3.2 shows silhouette cannot
+resolve differences at this effect size, so routing this through autoencoders
+and UMAPs would answer nothing. The 11 engineered features compared directly -
+per-feature distributions with effect sizes - needs no manifold and no
+representation learning.
 
-1. **Stage 4 quantification** - `quantify_model_based_dense.py --films FL1...`
-   FL1 alone is enough for the first comparison, which keeps it cheap. Expect
-   HPC time comparable to M160's 2.5-3.5 h/task.
-2. **Stage 4b strips** - `build_strips_m160.py` generalized to M162. Remember
-   the contrast rule: rescale to each film's [C1min, C1max] before writing,
-   never pass raw camera counts.
-3. **Stage 5 features** - `build_features_m160.py` against M162 paths. Must use
-   `PCA_utils.load_experiment_features` for the full 11 features, not
-   `clustering.cluster_cells_by_amplitude_and_delay` (9, weight-normalised).
-4. **Stage 6 autoencoder** - `train_fc_ae_m160.py --film-contains FL1_`, 3D
-   latent unseeded, to match the M160 FL1 model exactly.
-5. **Stage 6 validation** - `umap_validation/nn_sweep_fl1.py` parameterised for
-   M162. **P16 requires the shuffled-dimension null at M162's own n and latent
-   dimension**; the M160 floors do not transfer.
+1. **M162 FL1 through stages 4-5.** Stage 3 is already done, so this is the
+   fastest route to a first comparison point.
+2. **M160 FL1 vs M162 FL1 on the 11 features.** M160's side already exists.
+   If M162 cells are less stressed, `pol1_mid`, pole distance and Periodicity
+   should sit higher - the same signature M160 shows at FL1 relative to FL7.
+3. **Copy M161 to the SSD** (7.8 GB of 220 GB free; FL1 alone is ~1.1 GB).
+   Per P4, working data goes on the SSD, not the internal disk. FL1-only is
+   enough to start.
+4. **M161 FL1 through stages 1-5.** The long pole - segmentation and keyframe
+   curation from scratch. HPC, by analogy with M160's 2.5-3.5 h/task.
+5. **Three-way comparison**, reading off the table in 5.2.
+6. **Only then**, if the distributional result warrants it, stage 6 and the
+   manifold - with P16's shuffled-dimension nulls at each experiment's own n
+   and latent dimension. The M160 floors do not transfer.
 
 ### 6.3 Code changes required
 
 - Generalize the four `*_m160.py` modules to take an experiment root rather
-  than the hard-coded M160 path. They are currently M160-specific by
-  construction (P15 copy-to-modify), so this is a real refactor, not a flag.
+  than the hard-coded M160 path. They are M160-specific by construction under
+  P15's copy-to-modify rule, so this is a real refactor, not a flag.
 - `umap_validation/nn_sweep_fl1.py` hard-codes the M160 base and the `FL1_`
   filter; parameterise both.
-- M162 uses 4 fields (F0-F3) against M160's 3 (F0-F2), and film names
-  `NeonG_YES_*` against `5_1_N1_*`. Any regex or field enumeration assuming
-  M160's layout will need widening.
-- An M162 id map is needed. P12 forbids `new_cell_id` row numbers; follow the
-  M160 id map convention, not M156's.
+- Field count differs: M160 has 3 (F0-F2), M161 and M162 have 4 (F0-F3). Film
+  prefixes differ three ways: `5_1_N1_*`, `NeonG_YES_1_*`, `NeonG_YES_*`. Note
+  that `NeonG_YES_1_FL1` and `NeonG_YES_FL1` differ by one underscore-delimited
+  token, so any prefix match must be anchored or it will cross-match M161 and
+  M162.
+- An id map is needed for each of M161 and M162. P12 forbids `new_cell_id` row
+  numbers; follow the M160 convention, not M156's.
+- Stage 4b strips: rescale to each film's `[C1min, C1max]` before writing,
+  never pass raw camera counts.
 
-### 6.4 The analysis that actually answers the question
+### 6.4 Ledger
 
-Comparing two continuous blobs by silhouette will not work - section 3.2 shows
-the metric cannot resolve differences at this effect size. Two better designs:
-
-1. **Conditioned test, within each experiment.** Do the Mode categories (or
-   cell cycle stage) occupy distinct regions of latent space? The null is label
-   permutation with the geometry held fixed. This returns a signal even when
-   the unconditioned "are there clusters?" cannot, and it is the right
-   instrument for "does M162 have discrete modes?".
-2. **Direct distributional comparison, between experiments.** Compare M160 FL1
-   and M162 FL1 on the 11 engineered features directly - no autoencoder, no
-   UMAP, no clustering. Per-feature distributions with effect sizes. If M162
-   cells are less stressed, `pol1_mid`, pole distance and Periodicity should
-   all sit higher, exactly as they do at M160's FL1 relative to its FL7. This
-   is cheap, interpretable, and does not depend on any manifold assumption.
-
-Design 2 should be run **first**: it needs only stages 4-5 on M162 FL1, skips
-the autoencoder entirely, and would likely settle the stress question on its
-own.
+`docs/EXPERIMENTS.md` now carries M161 and the corrected M162 state. The
+unrecorded NAS experiments (M157-M159, M163-M167) are noted but not catalogued;
+see 6.1 question 3.
 
 ## 7. Reproduction
 
