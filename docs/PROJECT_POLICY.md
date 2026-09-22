@@ -1066,4 +1066,4 @@ Therefore:
 5. Re-run `SingleCellDataAnalysis/umap_validation/null_calibration.py` before
    publishing any structural claim about a new embedding.
 
-Full workings: `docs/development_reports/2026-09-21_umap_clustering_is_not_measurable_with_silhouette_hopkins.md`
+Full workings: `docs/development_reports/development_report_2026_09_21_umap_null_calibration.md`

@@ -5,7 +5,7 @@
 **Controls used:** Sept17 (2025_09_17), M160 FL1-only
 **Artifacts:** `/Volumes/X10 Pro/FungalProject_Outputs/umap_control/`
 **Related:** P16 in `docs/PROJECT_POLICY.md`;
-`2026-09-21_umap_clustering_is_not_measurable_with_silhouette_hopkins.md`
+`development_report_2026_09_21_umap_null_calibration.md`
 
 ---
 
