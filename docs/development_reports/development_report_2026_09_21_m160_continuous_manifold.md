@@ -9,6 +9,15 @@
 
 ---
 
+> **SUPERSEDED 2026-09-22 — see [development_report_2026_09_22_modes_are_real.md](development_report_2026_09_22_modes_are_real.md).**
+> The "no discrete dynamic modes" conclusion below is **withdrawn**. `pol2_mid` is
+> multimodal in every dataset including M160 (ΔBIC −2,627 on the full cohort,
+> dip p < 0.001). The modes are real; the silhouette-over-UMAP test simply could
+> not detect them, because the structure is a point mass beside a continuum
+> rather than two blobs. What that test supported was "the metric detects no
+> structure", not "there is no structure".
+
+
 ## 1. Question
 
 M156/Sept17 work had left the expectation that single-cell polarity dynamics

@@ -176,6 +176,14 @@ tips, so the polarity signal is weak.
 
 ## 6b. Correction issued 2026-09-22 (later the same day)
 
+> **ITSELF SUPERSEDED, same day — see [development_report_2026_09_22_modes_are_real.md](development_report_2026_09_22_modes_are_real.md).**
+> This section concluded the healthy arm has no discrete modes either. That is
+> wrong: `pol2_mid` is multimodal in M162 (ΔBIC −815, dip p < 0.001) and in every
+> other dataset. The modes are real; the clustering test could not see them.
+> The growth-rate result in section 5.2 is unaffected — it is measured on
+> brightfield areas, independently of any manifold.
+
+
 M162's UMAP was built and given the P16 null calibration. It does **not** clear
 its own shuffled null by any meaningful margin (+0.063 at the fraction-matched
 setting, against +0.9 for genuine clusters), so **the healthy arm has no
