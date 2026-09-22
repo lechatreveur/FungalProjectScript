@@ -9,6 +9,8 @@ Version 1.10 (2026-09-11) adds P15, revises P14 stage 3 for model-based dense
 tracking, and adds the development-report location rule to P3.
 Version 1.11 (2026-09-14) extends P14 to stages 5 and 6 (feature extraction and
 manifold), and adds those stages plus the vertical-strip rule to P15.
+Version 1.12 (2026-09-21) adds P16 (cluster claims require matched nulls).
+Version 1.13 (2026-09-22) adds P17 (compute placement: when to use the HPC).
 
 The working policy for changes to this repository, whether made by a person or an
 AI agent. [AGENTS.md](../AGENTS.md) is the entry router; this file is the
@@ -36,6 +38,9 @@ rulebook. It currently covers:
 - **P14 — Pipeline stage order and per-stage objective priority** (below).
 - **P15 — Canonical modules: which script to use, and the copy-to-modify rule**
   (below).
+- **P16 — Cluster claims about a UMAP embedding require matched nulls**
+  (below).
+- **P17 — Compute placement: when a job belongs on the HPC** (below).
 
 Cross-model verification (using an external CLI agent as an independent
 reviewer) is planned for version 2 and is not policy yet.
@@ -1067,3 +1072,99 @@ Therefore:
    publishing any structural claim about a new embedding.
 
 Full workings: `docs/development_reports/development_report_2026_09_21_umap_null_calibration.md`
+
+
+## P17 — Compute placement: when a job belongs on the HPC
+
+### Why this exists
+
+On 2026-09-22 a stage-4 quantification of 2,270 cells was killed by the OS three
+times in one day on the workstation (18 GB RAM, swap shrunk by the OS from 8 GB
+to 4 GB), and was still unfinished after ~10 h of wall clock. The same
+experiment's data — 32 GB — was already sitting on the HPC, whose compute nodes
+have **128 GB and 40 cores** and whose himem nodes have **1 TB and 96 cores**.
+The job should never have run locally. Nothing in policy said so, and no agent
+was expected to make that call, so the default was "run it where I am".
+
+Agents may choose the HPC. This section says when they should, what they may do
+without asking, and what they must record.
+
+### The decision rule
+
+Run on the HPC when **any** of these holds:
+
+| Signal | Threshold |
+| --- | --- |
+| Working set | exceeds ~8 GB, or the job has already been OOM-killed once |
+| Estimated wall clock | exceeds ~2 h locally |
+| Parallelism | the work is embarrassingly parallel over films or cells |
+| Repetition | the same stage will be re-run across films, fields or experiments |
+
+Stay local when **all** of these hold: the job is interactive or exploratory,
+its inputs are only on the local SSD, it finishes in minutes, or it needs
+Apple-Silicon MPS (Cellpose segmentation is the standing example — keep it
+local).
+
+**One OOM kill is a decision point, not a retry prompt.** Reducing worker count
+and re-running is acceptable once, to test whether the job is merely
+oversubscribed. A second kill means the job is in the wrong place; move it.
+
+### What an agent may do without asking
+
+- Read HPC state: `sinfo`, `squeue`, `ls`, `du`, log tails.
+- Sync code and inputs *into* the experiment's own directories under
+  `/RAID1/working/R402/hsushen/FungalProject/`.
+- Generate SLURM scripts with the `generate_*_jobs_*.py` family.
+- `sbatch` a job that is **resumable**, **resource-capped**, and writes only
+  inside that experiment's output directory.
+- `scancel` a job it submitted itself in this session.
+
+### What requires the owner's go-ahead
+
+- Anything on a **himem** partition, or requesting more than ~8 cores or ~32 GB
+  per task, or a wall clock over 12 h. These are shared resources.
+- `scancel` of a job the agent did not submit.
+- Deleting or overwriting anything on RAID1 outside the run's own outputs
+  (P5 still applies, and applies harder on shared storage).
+- Any sync that would remove remote files (`rsync --delete` is gated by P5).
+
+### Requirements on every submitted job
+
+1. **Resumable.** Completed units must be skipped on restart. A job that cannot
+   resume must not be submitted, because a timeout then costs everything.
+   Never submit with a `--force`-style flag that would redo completed work:
+   a kill mid-run then leaves a mixture of fresh and stale outputs that a
+   later resume will silently accept. That trap cost a rebuild on 2026-09-22.
+2. **One array task per natural unit** — per film for stage 3/4, since both
+   cache per film. A per-cell array redoes that caching thousands of times.
+3. **Resource-capped.** State `--mem`, `--cpus-per-task` and `--time`
+   explicitly; do not inherit partition defaults.
+4. **Provenance (P3).** Record the job ID, partition, array size, the commit
+   the code was synced from, and where outputs landed. Note that
+   `/home/hsushen/FungalProjectScript` on the HPC is **not a git checkout** —
+   code arrives there by rsync — so the commit must be recorded from the local
+   worktree at sync time. Until that is fixed, HPC provenance is weaker than
+   local provenance and should say so.
+5. **Retrieval is part of the job.** Outputs are not results until they are
+   back on the SSD and checked (P2, L1 at minimum: film count, frame count,
+   schema).
+
+### Layout
+
+| | Path |
+| --- | --- |
+| Code | `/home/hsushen/FungalProjectScript/SingleCellQuantificationHPC` |
+| Movies | `/RAID1/working/R402/hsushen/FungalProject/Movies/<EXP>` |
+| Outputs | `/RAID1/working/R402/hsushen/FungalProject/Outputs/<stage>/<EXP>` |
+| Scratch | `<code>/scratch` |
+| Partitions | `compute` / `compute-short` (15 nodes, 40 cores, 128 GB); `himem` / `himem-short` (2 nodes, 96+ cores, 1 TB) |
+
+Access is key-based and non-interactive from the workstation, so an agent can
+submit and poll without a human in the loop. That is precisely why the limits
+above are written down.
+
+### Anti-pattern
+
+Do not grind a large job locally because the data happens to be on the SSD.
+Check whether it is already on RAID1 first — on 2026-09-22 it was, and a day
+was lost to not looking.
