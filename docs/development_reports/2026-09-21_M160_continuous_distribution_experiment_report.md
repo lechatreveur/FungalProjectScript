@@ -1,4 +1,4 @@
-# M160: the polarity manifold is continuous, and it is not the laser
+# M160: the polarity manifold is continuous because the cells are growth-arrested
 
 **Date:** 2026-09-21
 **Experiment:** 2026_08_28_M160 (`5_1_N1`, FL1-FL7 + BF1-BF6, fields F0-F2)
@@ -115,18 +115,75 @@ already absent in FL1**, which has the least exposure of any film and still
 fails to beat its own shuffled null. Illumination damages the signal
 progressively; it did not create the continuous distribution.
 
-## 4. Interpretation
+## 4. Interpretation: M160 is growth-arrested
 
-The M160 population is polarity-continuous rather than mode-discrete. Given
-3.5, the most probable reading is that the cells were already stressed at the
-start of imaging - by some factor of the microscopy session or the sample
-preparation preceding it - and that this stress collapsed the discrete
-dynamical repertoire into a continuum before the first fluorescent frame.
+**Correction.** Earlier drafts of this report speculated that M160's low
+polarity contrast might be a strain or fluorophore artifact. That was wrong.
+M160 uses the **same strain and the same probe** as M161 and M162. The
+difference is the **medium**: M160 in EMM (minimal), M161 and M162 in YES
+(rich).
 
-Candidate factors, none yet excluded: temperature at the stage, medium
-composition or exhaustion, agar pad preparation and drying, culture age or
-density at mounting, time between mounting and first acquisition, focus drift
-and the BF interleave, strain background.
+### 4.1 Growth rate, from brightfield
+
+Per-cell fit of ln(area) against time within one film. BF is the measure of
+record because FL-derived size is not cell size (section 3.5).
+
+| | medium | n cells | mu (1/h) | doubling time | literature |
+| --- | --- | ---: | ---: | ---: | --- |
+| **M160** | EMM (minimal) | 7,047 | **+0.0120** | **57.7 h** | 3-4 h |
+| **M162** | YES (rich) | 2,228 | **+0.1762** | **3.93 h** | 2-2.5 h |
+
+**M160 is effectively not growing.** It is ~15x slower than M162 and ~15x
+slower than EMM itself predicts. This is arrest, not minimal-medium growth.
+M162's 3.93 h is modestly slower than culture literature, which is what an agar
+pad under a microscope should look like.
+
+M161 cannot enter this table: its BF protocol is 10 frames at 30 s = 5 min
+against the others' 20.5 min, and over 5 min a 3 h doubling moves area ~1.9%,
+at or below segmentation noise. Its FL1-derived rate is Td 3.00 h, resting on
+the proxy argument in 4.3 rather than direct confirmation.
+
+### 4.2 Why this explains the polarity results
+
+Cells that are not growing are not extending tips, so there is no polarised
+growth machinery to detect. That accounts for the whole pattern in one stroke:
+
+- pole/cytoplasm excess contrast 3.9% (M160) against 12.0% (M162);
+- `pol1_mid` 5.4 / 12.7 / 20.9 and `d` 1.6 / 7.8 / 16.8 across M160 / M161 / M162;
+- M160's much tighter distributions - not merely lower but collapsed;
+- and the central result of this report, that M160's manifold is continuous
+  with no discrete dynamic modes.
+
+**A continuous, structureless polarity manifold is what an arrested population
+should produce.** The absence of modes is not a failure of the pipeline or of
+the representation; there were no modes to find.
+
+### 4.3 Controls
+
+**Cell size is not the explanation.** Median size at FL1 t=0 is nearly
+identical across all three: length 113.1 / 115.8 / 114.0 px, area 3278 / 3431 /
+3475 px2. Same-sized cells, 15x different growth rates, so the gap is not a
+pixel-scale or mask-calibration artifact.
+
+**FL fails where signal is weak, not universally.** In M162 (strong signal)
+FL1 tracks BF: 0.208 vs 0.176 /h. In M160 (weak signal) FL1 says 9.1 h while BF
+says 57.7 h - a 6x overstatement, because a dimming mask shrinks and hides the
+absent growth. Hence the proxy argument for M161: it is YES with signal
+resembling M162's, where FL1 demonstrably tracks BF.
+
+### 4.4 What remains open
+
+Why the EMM culture was arrested is not answered here. Candidates: the medium
+batch itself, carbon or nitrogen exhaustion before mounting, culture age or
+density at mounting, or a stress response triggered during sample preparation.
+Distinguishing these needs a purpose-designed experiment, not more analysis of
+these three.
+
+Note also the session-level finding of section 5: M161 and M162, replicates in
+every controlled respect, still differ at 5 of 11 features with medium-or-large
+effect. Session variance is large, so single-session comparisons cannot resolve
+modest effects. The M160 growth result survives this only because its effect is
+enormous.
 
 ## 5. Next step: compare M160, M161 and M162 FL1
 
@@ -148,6 +205,8 @@ in `docs/EXPERIMENTS.md`.)
 | --- | --- | --- | --- |
 | date | 2026-08-28 | 2026-09-03 | 2026-09-09 |
 | condition | `5_1_N1` | `NeonG_YES_1` | `NeonG_YES` |
+| strain / probe | same | same | same |
+| **medium** | **EMM (minimal)** | **YES (rich)** | **YES (rich)** |
 | FL films | FL1-FL7 | FL1-FL6 | FL1-FL4 |
 | BF films | BF1-BF6 | BF1-BF5 | BF1-BF3 |
 | fields | F0-F2 (3) | F0-F3 (4) | F0-F3 (4) |
