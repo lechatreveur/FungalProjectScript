@@ -155,9 +155,14 @@ Controls: median cell size is near-identical across all three (length 113-116
 px), so this is not a scale artifact; and FL-derived size fails only where
 signal is weak — FL1 tracks BF in M162 (0.208 vs 0.176) but overstates M160 6x.
 
-**This subsumes the polarity results.** Non-growing cells do not extend tips, so
-there is no polarised growth machinery to detect. The continuous, mode-free
-manifold is what an arrested population should produce.
+**This explains M160's low polarity contrast.** Non-growing cells do not extend
+tips, so the polarity signal is weak.
+
+> **Corrected later the same day — see section 6b.** This section originally
+> continued "the continuous, mode-free manifold is what an arrested population
+> should produce", treating arrest as the explanation for the absent discrete
+> modes. That inference was wrong: M162, growing normally, has no discrete
+> modes either. Arrest explains the weak contrast, not the absent modes.
 
 ## 6. Corrections to earlier reports
 
@@ -168,6 +173,17 @@ manifold is what an arrested population should produce.
   `development_report_2026_09_21_<topic>.md` and all references updated.
   Figures previously living only on the SSD are now committed under
   `figures/`, as P3 requires.
+
+## 6b. Correction issued 2026-09-22 (later the same day)
+
+M162's UMAP was built and given the P16 null calibration. It does **not** clear
+its own shuffled null by any meaningful margin (+0.063 at the fraction-matched
+setting, against +0.9 for genuine clusters), so **the healthy arm has no
+discrete modes either**. Growth arrest therefore does not explain the absence
+of modes in M160 — only its low polarity contrast, which it still explains.
+
+Recorded as a correction section in
+[the 2026-09-21 report](development_report_2026_09_21_m160_continuous_manifold.md).
 
 ## 7. Next
 

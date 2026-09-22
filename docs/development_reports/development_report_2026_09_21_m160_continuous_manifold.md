@@ -328,3 +328,53 @@ python3 SingleCellDataAnalysis/umap_validation/nn_sweep_fl1.py
 
 All write to `/Volumes/X10 Pro/FungalProject_Outputs/umap_control/`. Run from
 the repo root with the SSD mounted.
+
+---
+
+## CORRECTION (2026-09-22): growth arrest does not explain the absent modes
+
+Section 4.2 above argued that "a continuous, structureless polarity manifold is
+what an arrested population should produce", treating growth arrest as the
+explanation for M160 having no discrete dynamic modes.
+
+**That inference was wrong, and this section supersedes it.**
+
+M162 — the healthy arm, YES medium, BF doubling 3.93 h, 0.21% model-only
+frames — was put through the same standalone manifold on 2026-09-22 and given
+the P16 null calibration at its own n and latent dimension (n=760, 6D):
+
+| dataset | sil @15 | sil @30 (fraction-matched) |
+| --- | ---: | ---: |
+| isotropic Gaussian | +0.410 | +0.396 |
+| M162 shuffled dims | +0.407 | +0.396 |
+| **M162 real** | **+0.449** | **+0.459** |
+| 3 true blobs | +0.899 | +0.927 |
+
+M162 sits +0.042 and +0.063 above its own shuffled null, against +0.9 for
+genuine clusters, and the real map is visually indistinguishable from the
+structure-destroyed null (`figures/umap_null_calibration/` and
+`m162_null_calibration.png`). **The healthy, normally growing population has no
+discrete modes either.**
+
+So the absence of modes is not a consequence of M160's arrest. What growth
+arrest does explain, and still explains, is M160's *low polarity contrast* —
+pole/cytoplasm excess 3.9% against M162's 12.0%, and the 4-10x lower `d` and
+`pol1_mid`. Non-growing cells do not extend tips, so the polarity signal is
+weak. That part stands.
+
+What now needs a different explanation is why no dataset in this project shows
+discrete structure: Sept17, M160 full, M160 FL1 and M162 have all come back
+within their own noise bands. Two readings remain open, and they are not
+separable from what has been measured so far:
+
+1. the dynamics really are continuous, and the discrete-mode model (non-polar,
+   monopolar, bipolar, and their oscillatory variants) is a description of the
+   extremes of a continuum rather than of separable states; or
+2. the representation cannot resolve modes that exist — the 11 features plus a
+   101x2 trajectory through a 6D autoencoder may simply not carry the
+   distinguishing information.
+
+Distinguishing these needs a conditioned test rather than another manifold: do
+the Mode categories, or cell cycle stage, occupy distinct regions of latent
+space, against a label-permutation null? That returns a signal even where the
+unconditioned "are there clusters?" cannot.
