@@ -405,6 +405,26 @@ def main():
         f.write(json.dumps(color_arrays, separators=(",", ":")))
         f.write(";\nvar LIMITS=")
         f.write(json.dumps(limits, separators=(",", ":")))
+        # A COMMON y-range for every trajectory panel. Auto-scaling per cell
+        # makes a flat cell look as dynamic as an oscillating one, and hides
+        # the FL1->FL4 amplitude collapse entirely, so the panels have to share
+        # an axis to be comparable at all. Robust percentiles rather than
+        # min/max, so a single spike does not flatten every other cell.
+        _all = []
+        for _v in traj.values():
+            _all.extend([x for x in _v.get("p1", []) if x is not None])
+            _all.extend([x for x in _v.get("p2", []) if x is not None])
+        if _all:
+            _arr = np.asarray(_all, float)
+            _arr = _arr[np.isfinite(_arr)]
+            _lo, _hi = np.percentile(_arr, [0.5, 99.5])
+            _pad = 0.05 * (_hi - _lo)
+            traj_range = [float(_lo - _pad), float(_hi + _pad)]
+        else:
+            traj_range = None
+        print(f"trajectory y-range (shared, 0.5-99.5 pct): {traj_range}", flush=True)
+        f.write(";\nvar TRAJ_YRANGE=")
+        f.write(json.dumps(traj_range))
         f.write(";\nvar TRAJ=")
         f.write(json.dumps(traj, separators=(",", ":")))
         f.write(";\nvar ACF=")
@@ -470,6 +490,12 @@ var MODE_AXIS = "Dynamic mode";
 // signal_cor computes it as -(A + C) over the cross-correlation fit. So an
 // oscillatory cell needs NC >= thr, not <=. 30% of datapoints are at or above
 // zero, which is the default.
+// Trajectory panels share one y-axis by default so cells are comparable.
+// Auto-scaling per cell makes a flat cell look as dynamic as an
+// oscillating one, and hides the FL1->FL4 amplitude collapse entirely.
+// Toggle off to inspect one flat cell's own dynamics.
+var TRAJ_YSHARED = true;
+function setTrajShared(v){ TRAJ_YSHARED = !!v; if (selected) showCell(selected); }
 var THR = { pol1: 4.04, pol2: 2.0, mono: 1.14, bi: 1.60, nc: 0.0 };
 var MODE_LABELS = ["Non-polarized", "Monopolar", "Monopolar Osc", "Bipolar", "Bipolar Osc"];
 var MODE_COLORS = ["#94a3b8", "#f59e0b", "#ef4444", "#10b981", "#3b82f6"];
@@ -715,7 +741,11 @@ function showCell(c){
          {x:tr.t, y:tr.p2, mode:'lines', name:'Pol2', line:{color:'#3b82f6',width:2}}],
         {margin:{l:46,r:10,b:38,t:10},
          xaxis:{title:'Frame', showgrid:false},
-         yaxis:{title:'Intensity − cytoplasm', gridcolor:'#e2e8f0', zeroline:false},
+         yaxis:Object.assign({title:'Intensity − cytoplasm', gridcolor:'#e2e8f0',
+                              zeroline:false},
+                             (TRAJ_YSHARED && TRAJ_YRANGE)
+                               ? {range:TRAJ_YRANGE.slice(), autorange:false}
+                               : {autorange:true}),
          shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:0,y1:0,
                   line:{color:'#94a3b8',width:1,dash:'dot'}}],
          showlegend:false, paper_bgcolor:'transparent', plot_bgcolor:'transparent'},
