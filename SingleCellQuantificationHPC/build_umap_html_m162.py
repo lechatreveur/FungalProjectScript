@@ -124,6 +124,11 @@ CSS = """
     .formula { font-size:0.72rem; color:#334155; background:#f1f5f9; padding:8px;
                border-radius:4px; border:1px solid #e2e8f0; line-height:1.6; margin-top:8px; }
     #thr-row { display:none; gap:6px; align-items:center; flex-wrap:wrap; }
+    #traj-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+                margin-top:4px; }
+    #traj-row input[type=number] { width:64px; }
+    #traj-row span { color:#94a3b8; font-size:0.72rem; }
+    #traj-row button { font-size:0.72rem; padding:2px 8px; cursor:pointer; }
     #thr-row input { width:64px; }
     #thr-row span { color:#94a3b8; font-size:0.72rem; }
     .legend { font-size:0.7rem; color:#64748b; text-align:center; margin-top:3px; }
@@ -390,6 +395,14 @@ def main():
                 '<span>bi osc&gt;</span><input type="number" id="thr-bi" step="any" value="1.60">'
                 '<span>NC&ge;</span><input type="number" id="thr-nc" step="any" value="0">'
                 '</div>\n')
+        f.write('<div id="traj-row">'
+                '<span>Trajectory y-axis:</span>'
+                '<input type="number" id="traj-ymin" step="any" placeholder="min">'
+                '<input type="number" id="traj-ymax" step="any" placeholder="max">'
+                '<button id="traj-reset" type="button">reset</button>'
+                '<span class="chk"><input type="checkbox" id="traj-auto">'
+                '<label for="traj-auto">auto per cell</label></span>'
+                '</div>\n')
         f.write(f'<div class="note"><b>Standalone</b> &mdash; autoencoder and UMAP both fit on '
                 f'M162 alone ({len(cells)} datapoints, {n_multi} cells spanning &ge;2 films).<br>'
                 f'UMAP on AE latents. Colour limits 2nd&ndash;98th pct unless overridden. {stamp}.</div>\n')
@@ -496,6 +509,36 @@ var MODE_AXIS = "Dynamic mode";
 // Toggle off to inspect one flat cell's own dynamics.
 var TRAJ_YSHARED = true;
 function setTrajShared(v){ TRAJ_YSHARED = !!v; if (selected) showCell(selected); }
+
+// Resolve the trajectory y-axis once per draw. Precedence:
+//   1. whatever is typed in the manual boxes (either bound on its own)
+//   2. the shared range computed over every trajectory (the default)
+//   3. per-cell autoscale, only if "auto per cell" is ticked
+// A manual bound beats the auto checkbox, so typing a number does what it
+// looks like it does rather than being silently ignored.
+function trajYAxis(){
+  var lo = parseFloat((document.getElementById('traj-ymin')||{}).value);
+  var hi = parseFloat((document.getElementById('traj-ymax')||{}).value);
+  var auto = (document.getElementById('traj-auto')||{}).checked;
+  var base = (TRAJ_YSHARED && TRAJ_YRANGE) ? TRAJ_YRANGE.slice() : null;
+  var haveLo = isFinite(lo), haveHi = isFinite(hi);
+  if (haveLo || haveHi){
+    var r = base ? base.slice() : [lo, hi];
+    if (haveLo) r[0] = lo;
+    if (haveHi) r[1] = hi;
+    if (isFinite(r[0]) && isFinite(r[1]) && r[1] > r[0])
+      return {range:r, autorange:false};
+  }
+  if (auto || !base) return {autorange:true};
+  return {range:base, autorange:false};
+}
+
+function resetTrajRange(){
+  var a = document.getElementById('traj-ymin'), b = document.getElementById('traj-ymax');
+  if (a) a.value = ''; if (b) b.value = '';
+  var c = document.getElementById('traj-auto'); if (c) c.checked = false;
+  if (selected) showCell(selected);
+}
 var THR = { pol1: 4.04, pol2: 2.0, mono: 1.14, bi: 1.60, nc: 0.0 };
 var MODE_LABELS = ["Non-polarized", "Monopolar", "Monopolar Osc", "Bipolar", "Bipolar Osc"];
 var MODE_COLORS = ["#94a3b8", "#f59e0b", "#ef4444", "#10b981", "#3b82f6"];
@@ -743,9 +786,7 @@ function showCell(c){
          xaxis:{title:'Frame', showgrid:false},
          yaxis:Object.assign({title:'Intensity − cytoplasm', gridcolor:'#e2e8f0',
                               zeroline:false},
-                             (TRAJ_YSHARED && TRAJ_YRANGE)
-                               ? {range:TRAJ_YRANGE.slice(), autorange:false}
-                               : {autorange:true}),
+                             trajYAxis()),
          shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:0,y1:0,
                   line:{color:'#94a3b8',width:1,dash:'dot'}}],
          showlegend:false, paper_bgcolor:'transparent', plot_bgcolor:'transparent'},
@@ -871,6 +912,17 @@ document.getElementById('cur-chk').addEventListener('change', renderPlot);
 ['thr-pol1','thr-pol2','thr-mono','thr-bi','thr-nc'].forEach(function(id){
   document.getElementById(id).addEventListener('input', debounce(renderPlot, 250));
 });
+// The trajectory axis touches only the sidebar panel, so redraw the open cell
+// rather than the whole scatter.
+['traj-ymin','traj-ymax'].forEach(function(id){
+  document.getElementById(id).addEventListener('input', debounce(function(){
+    if (selected) showCell(selected);
+  }, 250));
+});
+document.getElementById('traj-auto').addEventListener('change', function(){
+  if (selected) showCell(selected);
+});
+document.getElementById('traj-reset').addEventListener('click', resetTrajRange);
 renderPlot();
 </script>
 </body>
