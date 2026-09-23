@@ -119,9 +119,14 @@ def main():
                          "The run is then NOT reproducible: on this data the "
                          "same code gives an 8.5%% spread in loss and a "
                          "different latent space each time.")
-    ap.add_argument("--film-contains", default=None,
-                    help="train only on datapoints whose film matches, "
-                         "e.g. FL1_ for the least laser-exposed block")
+    ap.add_argument("--film-contains", nargs="+", default=None,
+                    help="train only on datapoints whose film matches ANY of "
+                         "these, e.g. --film-contains FL1_ FL2_ to fit on the "
+                         "two least laser-exposed blocks. M162's polarity "
+                         "signal collapses across the series (pol1_mid 20.9 -> "
+                         "3.7 from FL1 to FL4, with 52.8%% of FL4 below the "
+                         "polarity threshold), so fitting on the late films "
+                         "would put a bleaching axis into the latent space.")
     ap.add_argument("--keep-division-films", action="store_true",
                     help="train on the dividing films too (default: exclude them)")
     a = ap.parse_args()
@@ -166,8 +171,9 @@ def main():
     # uniform as this experiment allows, to test whether structure in the full
     # manifold is biology or phototoxicity.
     if a.film_contains:
-        keep = np.array([a.film_contains in g for g in gids], bool)
-        print(f"film filter {a.film_contains!r}: {int(keep.sum())} of {len(gids)} "
+        pats = a.film_contains
+        keep = np.array([any(pat in g for pat in pats) for g in gids], bool)
+        print(f"film filter {pats!r}: {int(keep.sum())} of {len(gids)} "
               f"datapoints", flush=True)
         X_traj, X_feat = X_traj[keep], X_feat[keep]
         gids = [g for g, k in zip(gids, keep) if k]
@@ -223,7 +229,7 @@ def main():
         model=(f"MultimodalAutoencoder3D(seq_len=101, in_channels=2, "
                f"num_features=11, latent_dim={a.latent_dim})"),
         latent_dim=int(a.latent_dim),
-        film_filter=a.film_contains,
+        film_filter=(list(a.film_contains) if a.film_contains else None),
         division_films_excluded=bool(not a.keep_division_films),
         features_dir=str(a.features_dir), n_datapoints=int(len(gids)),
         epochs=a.epochs, batch_size=a.batch_size, lr=LEARNING_RATE,

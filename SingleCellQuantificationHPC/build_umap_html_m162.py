@@ -211,6 +211,15 @@ def main():
     ap.add_argument("--n-neighbors", type=int, default=None,
                     help="UMAP n_neighbors; default scales with the dataset to "
                          "hold the Sept17 reference fraction of 15/378")
+    ap.add_argument("--fit-film-contains", nargs="+", default=None,
+                    help="fit the UMAP on datapoints whose film matches ANY of "
+                         "these, and PROJECT the rest with .transform() (P1's "
+                         "reference-manifold pattern). M162's polarity signal "
+                         "collapses across the series — pol1_mid 20.9 -> 3.7 "
+                         "from FL1 to FL4, 52.8%% of FL4 below the polarity "
+                         "threshold — so fitting on the late films would make "
+                         "the dominant axis photobleaching. Datapoints outside "
+                         "the fit set are marked `projected` in the explorer.")
     ap.add_argument("--film-contains", default=None,
                     help="restrict the map to films matching this string")
     ap.add_argument("--no-strips", action="store_true")
@@ -249,10 +258,32 @@ def main():
     print(f"latents: {lat.shape}; n_neighbors {n_nb} "
           f"({100*n_nb/len(lat):.2f}% of {len(lat)}, matching Sept17's "
           f"{100*NEIGHBORS_FRAC:.2f}%); fitting UMAP ...", flush=True)
-    e3 = umap.UMAP(n_components=3, n_neighbors=n_nb,
-                   random_state=42, n_jobs=1).fit_transform(lat)
-    e2 = umap.UMAP(n_components=2, n_neighbors=n_nb,
-                   random_state=42, n_jobs=1).fit_transform(lat)
+    if a.fit_film_contains:
+        pats = list(a.fit_film_contains)
+        fit_mask = np.array([any(pat in g for pat in pats) for g in gids], bool)
+        if fit_mask.sum() < 10:
+            raise SystemExit(f"--fit-film-contains {pats} matched only "
+                             f"{int(fit_mask.sum())} datapoints")
+        # n_neighbors is taken on the FIT set, since that is the manifold being
+        # learned; projecting more points later does not change its density.
+        n_fit = int(fit_mask.sum())
+        n_nb = a.n_neighbors or max(2, min(n_fit - 1,
+                                           round(NEIGHBORS_FRAC * n_fit)))
+        print(f"fitting on {n_fit} datapoints matching {pats}, projecting the "
+              f"remaining {len(lat) - n_fit}; n_neighbors {n_nb} "
+              f"({100*n_nb/n_fit:.2f}% of the fit set)", flush=True)
+        r3 = umap.UMAP(n_components=3, n_neighbors=n_nb,
+                       random_state=42, n_jobs=1).fit(lat[fit_mask])
+        r2 = umap.UMAP(n_components=2, n_neighbors=n_nb,
+                       random_state=42, n_jobs=1).fit(lat[fit_mask])
+        e3 = r3.transform(lat)
+        e2 = r2.transform(lat)
+    else:
+        fit_mask = np.ones(len(lat), bool)
+        e3 = umap.UMAP(n_components=3, n_neighbors=n_nb,
+                       random_state=42, n_jobs=1).fit_transform(lat)
+        e2 = umap.UMAP(n_components=2, n_neighbors=n_nb,
+                       random_state=42, n_jobs=1).fit_transform(lat)
 
     feats = pd.read_csv(a.features_dir / f"umap_features_{EXP_TAG}.csv")
     # Cell-cycle stage, from cell_cycle_regress_m160.py. `stage_source` marks
