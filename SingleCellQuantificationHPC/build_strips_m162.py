@@ -171,6 +171,66 @@ class Frames:
         return self.scale[film]
 
 
+def _orient_consistently(tiles):
+    """Stop the cell flipping end-for-end partway down a strip.
+
+    `regionprops.orientation` is defined modulo 180 degrees, so the angle that
+    straightens a cell to horizontal is ambiguous by a half turn. A cell whose
+    measured angle wanders across that boundary renders reversed from one frame
+    to the next, and the strip appears to swap its endpoints.
+
+    Fixed by continuity: each tile is compared against a running reference both
+    as-is and mirrored, and the better match is kept. The comparison uses the
+    MASK's width profile along the long axis — where the cell has body, not how
+    bright it is.
+
+    Using intensity here would be wrong, and the distinction matters. An
+    oscillating bipolar cell legitimately changes which end is brighter; an
+    intensity-anchored rule would mirror the image to chase that, and the
+    oscillation — the very thing the strip is meant to show — would vanish.
+    Shape does not oscillate, so it can anchor the frame while the signal moves
+    within it.
+
+    The reference is a running blend rather than frame 0 alone, so a single
+    poorly segmented frame cannot flip the remainder of the strip.
+    """
+    if len(tiles) < 2:
+        return tiles, 0
+
+    def profile(t):
+        # column sums of the cell's body; tiles are already rotated horizontal
+        pr = (np.asarray(t, np.float32) > 0).sum(axis=0).astype(np.float32)
+        if pr.sum() <= 0:
+            return None
+        pr = pr - pr.mean()
+        n = float(np.linalg.norm(pr))
+        return pr / n if n > 0 else None
+
+    out = [tiles[0]]
+    ref = profile(tiles[0])
+    n_flipped = 0
+    for t in tiles[1:]:
+        pr = profile(t)
+        if ref is None or pr is None:
+            out.append(t)
+            if pr is not None:
+                ref = pr
+            continue
+        same = float(np.dot(ref, pr))
+        flipped = float(np.dot(ref, pr[::-1]))
+        if flipped > same:
+            t = np.fliplr(np.asarray(t))
+            pr = pr[::-1]
+            n_flipped += 1
+        out.append(t)
+        # running blend: one bad frame cannot redefine the orientation
+        ref = 0.7 * ref + 0.3 * pr
+        nrm = float(np.linalg.norm(ref))
+        if nrm > 0:
+            ref = ref / nrm
+    return out, n_flipped
+
+
 def tiles_for_film(df, frames, film, tile_h=16, tile_w=56):
     """One tile per frame, reproducing what --make_strips feeds build_strip_tile.
 
@@ -211,6 +271,9 @@ def tiles_for_film(df, frames, film, tile_h=16, tile_w=56):
                        0, 255).astype(np.uint8)
         out.append(build_strip_tile(crop, mask[r0:r1, c0:c1],
                                     frame_h=tile_h, frame_w=tile_w))
+    out, n_flip = _orient_consistently(out)
+    if n_flip:
+        print(f"    {film}: re-oriented {n_flip} of {len(out)} tiles", flush=True)
     return out
 
 

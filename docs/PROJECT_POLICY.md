@@ -905,6 +905,51 @@ the EM or pole fitting.
 
 #### Stage 6 — manifold
 
+**Rules for the image and trajectory panels.** A manifold explorer puts a
+strip and a trajectory beside each other so they can be read together. Three
+things must hold, or the panels mislead rather than inform. Each was a real
+defect, found by the owner reading the page.
+
+1. **Strip endpoints stay on the same side for the whole datapoint.**
+   `regionprops.orientation` is defined modulo 180 degrees, so the rotation
+   that straightens a cell is ambiguous by a half turn and a cell whose angle
+   wanders across the boundary renders end-for-end reversed partway down its
+   strip. Enforce continuity: compare each tile against a running reference
+   both as-is and mirrored, and keep the better match.
+
+   **Anchor on the mask's shape, never on intensity.** An oscillating bipolar
+   cell legitimately changes which end is brighter; an intensity-anchored rule
+   mirrors the image to chase that, and the oscillation — the thing the strip
+   exists to show — disappears. Shape does not oscillate, so it can hold the
+   frame still while the signal moves inside it. Use a running blend rather
+   than frame 0 alone, so one badly segmented frame cannot flip the remainder.
+
+2. **Pixel intensities are comparable between datapoints.** The production
+   path rescales each crop to its OWN film's `[C1min, C1max]`, which is correct
+   within a film and wrong across a series whose signal changes. In M162 the
+   polarity signal falls by 85% from FL1 to FL4; per-film rescaling renders an
+   FL4 strip as bright as an FL1 strip, so two datapoints of the same cell look
+   identical while the measurement underneath collapses. Pool one
+   `(C1max, C1min)` across every film being rendered and pin it.
+
+   When strips are built film-by-film — one SLURM array task per film — the
+   pooled values must be **computed once and passed in explicitly**. A task
+   that recomputes its own "global" scale pools only its own film and silently
+   reproduces per-film scaling.
+
+3. **Trajectory panels share one y-axis.** Auto-scaling per cell makes a flat
+   cell look as dynamic as an oscillating one and hides an amplitude collapse
+   across films entirely. Derive the shared range from robust percentiles
+   (0.5–99.5) over every trajectory, not min/max, so one spike cannot flatten
+   the rest. Offer a manual override and a per-cell autoscale toggle, and let a
+   typed bound win over the toggle.
+
+**The general principle behind all three:** a panel that normalises each
+datapoint independently cannot be compared across datapoints, and comparison is
+what the explorer is for. Normalise once, globally, and let the differences
+show — including the unflattering ones.
+
+
 | Module | Method |
 | :--- | :--- |
 | `SingleCellDataAnalysis/FC_AE_3d_umap.py` | The self-contained explorer builder: loads the trained autoencoder, pairs features with 101-frame trajectories, reads pre-built strips, emits 3D and 2D UMAP with a colour-axis dropdown. This is what produced the reference explorer HTML. |
