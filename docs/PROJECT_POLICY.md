@@ -949,6 +949,48 @@ datapoint independently cannot be compared across datapoints, and comparison is
 what the explorer is for. Normalise once, globally, and let the differences
 show — including the unflattering ones.
 
+4. **Pole identity in the DISPLAY is anchored to a physical end, not to
+   brightness — and it is chained across a global cell's films.**
+
+   `PCA_utils.load_experiment_features` swaps labels so `pol1` is always the
+   *dominant* pole (`if pol2_mid > pol1_mid: swap`). That is correct for the
+   **feature vector**: it makes `pol1_mid` mean "the stronger pole" across
+   every cell, and the autoencoder depends on it. Do not change it.
+
+   It is wrong for the **display**. If `pol1` is defined as whichever end is
+   brighter, then a cell whose brighter end moves to the other pole still plots
+   as a high `pol1` and a low `pol2` — the label follows the brightness, so the
+   switch is invisible by construction. The one observation the panel exists to
+   support is the one it cannot show.
+
+   So the explorer must plot the *geometric* assignment, and that assignment
+   must mean the same physical end for every film of a global cell:
+
+   - **Within a film** quantification already maintains it: `ep_refs` carries
+     `ep1`/`ep2` frame to frame, so `pol1_int` tracks one physical end.
+   - **Across films** it is arbitrary. Each film's track is seeded
+     independently, so film N's `pol1` may be film N−1's `pol2`. Resolve the
+     correspondence geometrically — endpoints do not teleport between
+     consecutive films — and apply the resulting swap to the trajectory colours
+     **and** the strip orientation, so the two panels agree.
+   - The strip and the trajectory must be flipped by the **same** decision. A
+     strip showing the bright end at the top while the red trace is `pol2` is
+     worse than either error alone.
+
+   **`ep1`/`ep2` are currently computed and then discarded** — they are not
+   written to the stage-4 table (`quantify_one_object` keeps them only in
+   `ep_refs`). Recovering pole identity afterwards therefore means re-deriving
+   it from the masks. Persisting those two coordinates per frame at stage 4 is
+   the root fix and should be done when stage 4 is next re-run; until then any
+   cross-film pole resolution is a reconstruction and must be labelled as one.
+
+**A note on what is and is not a display concern.** Strips and trajectory
+panels feed no feature, no autoencoder input and no UMAP coordinate, so a
+defect in them changes no number. That is exactly why these defects survive:
+nothing fails, no metric moves, and only a person reading the page can catch
+them. All four rules above were found that way. Build the panels so that the
+comparison they invite is a valid one.
+
 
 | Module | Method |
 | :--- | :--- |
