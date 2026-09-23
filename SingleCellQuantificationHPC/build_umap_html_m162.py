@@ -227,6 +227,9 @@ def main():
                          "the fit set are marked `projected` in the explorer.")
     ap.add_argument("--film-contains", default=None,
                     help="restrict the map to films matching this string")
+    ap.add_argument("--pole-sides", type=Path, default=None,
+                    help="pole_sides.csv from resolve_pole_sides_m162.py; "
+                         "defaults to the one beside the outputs folder")
     ap.add_argument("--no-strips", action="store_true")
     ap.add_argument("--strips-mode", choices=("auto", "embed", "link"), default="auto",
                     help="embed inlines each PNG (self-contained but large); "
@@ -314,13 +317,39 @@ def main():
 
     stacked = pd.read_csv(a.features_dir / "unaligned_pairs_quant"
                           / "stacked_gfp1_gfp2_for_unaligned_pairs.csv")
+    pole_swap, pole_conf = {}, {}
+    _ps_path = a.pole_sides if a.pole_sides else (a.features_dir.parent / "pole_sides.csv")
+    if Path(_ps_path).exists():
+        _ps = pd.read_csv(_ps_path)
+        pole_swap = dict(zip(_ps.cell_id.astype(str), _ps.swap_for_display.astype(bool)))
+        if "confident" in _ps.columns:
+            pole_conf = dict(zip(_ps.cell_id.astype(str), _ps.confident.astype(bool)))
+        print(f"pole sides: {len(pole_swap)} datapoints, "
+              f"{int(sum(pole_swap.values()))} swapped for display, "
+              f"{sum(1 for v in pole_conf.values() if not v)} low confidence",
+              flush=True)
+    else:
+        print("(no pole_sides.csv; trajectory poles are NOT cross-film anchored)",
+              flush=True)
+
     traj, acf = {}, {}
     for cid, g in stacked.groupby("cell_id"):
         g = g.sort_values("time_point")
         acf[str(cid)] = detrended_acf(g)
+        # Pole identity for the DISPLAY is the geometric one, anchored to a
+        # physical end and made consistent across the cell's films (P15 stage 6
+        # rule 4). Without this swap a cell whose brighter end moves to the
+        # other pole still plots as a high p1, because the feature pipeline
+        # defines pol1 as the dominant pole — so the switch, the one thing the
+        # panel exists to show, is invisible.
+        _sw = bool(pole_swap.get(str(cid), False))
+        _a = [round(float(v), 3) for v in g.pol1_int_corr]
+        _b = [round(float(v), 3) for v in g.pol2_int_corr]
         traj[str(cid)] = dict(t=[int(v) for v in g.time_point],
-                              p1=[round(float(v), 3) for v in g.pol1_int_corr],
-                              p2=[round(float(v), 3) for v in g.pol2_int_corr])
+                              p1=(_b if _sw else _a),
+                              p2=(_a if _sw else _b),
+                              sw=1 if _sw else 0,
+                              lc=0 if pole_conf.get(str(cid), True) else 1)
 
     # fit parameters for the ACF card, straight from the canonical acor table
     acor = pd.read_csv(a.features_dir / "unaligned_pairs_quant"
@@ -775,6 +804,13 @@ function showCell(c){
     if (STRIPS[c.gid]) h += '<div class="card"><h2>Cell Timelapse Strip</h2>' +
       '<img src="' + STRIPS[c.gid] + '" style="width:100%;image-rendering:pixelated;border-radius:4px;"/>' +
       '<p class="legend">Frame 0 → 100 (top → bottom)</p></div>';
+    var _tr0 = TRAJ[c.gid];
+    if (_tr0 && _tr0.lc)
+      h += '<div class="card" style="border-left:3px solid #f59e0b">' +
+           '<p class="legend"><b>Pole identity uncertain</b> for this datapoint: ' +
+           'the two poles were of similar brightness, so which physical end is ' +
+           '&quot;pole 1&quot; could not be recovered reliably. Treat a side ' +
+           'change here as unverified.</p></div>';
     document.getElementById('content').innerHTML = h;
 
     var tr = TRAJ[c.gid];

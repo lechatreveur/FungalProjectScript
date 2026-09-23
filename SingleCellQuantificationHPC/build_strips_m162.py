@@ -307,6 +307,15 @@ def main():
                          "every task.")
     ap.add_argument("--c1min", type=float, default=None,
                     help="explicit contrast minimum; see --c1max")
+    ap.add_argument("--pole-sides", type=Path, default=None,
+                    help="pole_sides.csv from resolve_pole_sides_m162.py. Where "
+                         "a datapoint is marked swap_for_display, its whole "
+                         "strip is mirrored so that 'pole 1' is the same "
+                         "physical end in every film of that cell. The strip "
+                         "and the trajectory MUST be flipped by the same "
+                         "decision (P15 stage 6 rule 4): a strip showing the "
+                         "bright end at the top while the red trace is pol2 is "
+                         "worse than either error alone.")
     ap.add_argument("--print-scale", action="store_true",
                     help="pool the listed films, print (C1max, C1min), and exit")
     ap.add_argument("--force", action="store_true")
@@ -359,6 +368,14 @@ def main():
         items = items[:a.limit]
     print(f"datapoints (cell x film): {len(items)}", flush=True)
 
+    pole_swap = {}
+    if a.pole_sides and Path(a.pole_sides).exists():
+        _ps = pd.read_csv(a.pole_sides)
+        pole_swap = dict(zip(_ps.cell_id.astype(str),
+                             _ps.swap_for_display.astype(bool)))
+        print(f"pole sides: {len(pole_swap)} datapoints, "
+              f"{int(sum(pole_swap.values()))} to mirror", flush=True)
+
     frames = Frames(a.exp)
     if a.c1max is not None and a.c1min is not None:
         frames._global = (float(a.c1max), float(a.c1min))
@@ -383,6 +400,12 @@ def main():
             print(f"  {dp}: {type(exc).__name__}: {exc}", flush=True)
             failed += 1
             continue
+        # Mirror the whole datapoint when its poles are reversed relative to
+        # the cell's convention, so "pole 1" is the same physical end in every
+        # film. Driven by the SAME flag the trajectory colours use, so the two
+        # panels can never disagree (P15 stage 6 rule 4).
+        if pole_swap.get(dp, False):
+            tiles = [np.fliplr(np.asarray(t)) for t in tiles]
         if not tiles or not save_strip_from_tiles(tiles, str(dst)):
             failed += 1
             continue
